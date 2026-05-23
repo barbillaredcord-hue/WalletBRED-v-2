@@ -1,0 +1,156 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-glow: 0 10px 40px -10px color-mix(in oklab, var(--primary) 60%, transparent);
+  --shadow-card:
+    0 1px 0 0 color-mix(in oklab, white 6%, transparent) inset, 0 20px 40px -20px rgba(0, 0, 0, 0.6);
+}
+
+:root {
+  --radius: 1rem;
+
+  --background: oklch(0.16 0.02 270);
+  --foreground: oklch(0.98 0.005 270);
+
+  --surface: oklch(0.2 0.022 270);
+  --surface-elevated: oklch(0.235 0.025 272);
+
+  --card: oklch(0.21 0.024 270);
+  --card-foreground: oklch(0.98 0.005 270);
+  --popover: oklch(0.21 0.024 270);
+  --popover-foreground: oklch(0.98 0.005 270);
+
+  --primary: oklch(0.68 0.22 295);
+  --primary-foreground: oklch(0.13 0.02 270);
+
+  --secondary: oklch(0.78 0.16 210);
+  --secondary-foreground: oklch(0.13 0.02 270);
+
+  --muted: oklch(0.27 0.02 270);
+  --muted-foreground: oklch(0.72 0.02 270);
+
+  --accent: oklch(0.85 0.18 195);
+  --accent-foreground: oklch(0.13 0.02 270);
+
+  --destructive: oklch(0.65 0.24 25);
+  --destructive-foreground: oklch(0.98 0.005 270);
+
+  --success: oklch(0.78 0.18 155);
+  --success-foreground: oklch(0.13 0.02 270);
+
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.68 0.22 295);
+
+  --gradient-primary: linear-gradient(135deg, oklch(0.68 0.22 295), oklch(0.78 0.18 210));
+  --gradient-card: linear-gradient(160deg, oklch(0.24 0.03 280) 0%, oklch(0.18 0.02 265) 100%);
+  --gradient-vip: linear-gradient(135deg, oklch(0.78 0.16 60), oklch(0.68 0.22 25));
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+  body {
+    background-image:
+      radial-gradient(
+        ellipse 80% 50% at 50% -10%,
+        color-mix(in oklab, var(--primary) 25%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse 60% 40% at 100% 100%,
+        color-mix(in oklab, var(--secondary) 15%, transparent),
+        transparent 60%
+      );
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: color-mix(in oklab, var(--surface) 70%, transparent);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+  }
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  .gradient-card {
+    background: var(--gradient-card);
+  }
+  .gradient-vip {
+    background: var(--gradient-vip);
+  }
+  .text-gradient {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
