@@ -186,6 +186,80 @@ export type Database = {
           },
         ];
       };
+      telegram_stars_purchases: {
+        Row: {
+          chat_id: number | null;
+          created_at: string;
+          currency: string;
+          delivered_at: string | null;
+          delivery_error: string | null;
+          delivery_status: string;
+          id: string;
+          invoice_payload: string;
+          invoice_url: string | null;
+          pre_checkout_query_id: string | null;
+          product_id: string | null;
+          provider_payment_charge_id: string | null;
+          raw_successful_payment: Json | null;
+          status: string;
+          telegram_payment_charge_id: string | null;
+          telegram_user_id: number;
+          telegram_username: string | null;
+          total_amount: number;
+          updated_at: string;
+        };
+        Insert: {
+          chat_id?: number | null;
+          created_at?: string;
+          currency?: string;
+          delivered_at?: string | null;
+          delivery_error?: string | null;
+          delivery_status?: string;
+          id?: string;
+          invoice_payload: string;
+          invoice_url?: string | null;
+          pre_checkout_query_id?: string | null;
+          product_id?: string | null;
+          provider_payment_charge_id?: string | null;
+          raw_successful_payment?: Json | null;
+          status?: string;
+          telegram_payment_charge_id?: string | null;
+          telegram_user_id: number;
+          telegram_username?: string | null;
+          total_amount: number;
+          updated_at?: string;
+        };
+        Update: {
+          chat_id?: number | null;
+          created_at?: string;
+          currency?: string;
+          delivered_at?: string | null;
+          delivery_error?: string | null;
+          delivery_status?: string;
+          id?: string;
+          invoice_payload?: string;
+          invoice_url?: string | null;
+          pre_checkout_query_id?: string | null;
+          product_id?: string | null;
+          provider_payment_charge_id?: string | null;
+          raw_successful_payment?: Json | null;
+          status?: string;
+          telegram_payment_charge_id?: string | null;
+          telegram_user_id?: number;
+          telegram_username?: string | null;
+          total_amount?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "telegram_stars_purchases_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "premium_products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       wallet_movements: {
         Row: {
           amount: number | null;

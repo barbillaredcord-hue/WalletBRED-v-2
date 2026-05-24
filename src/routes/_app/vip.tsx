@@ -1,9 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Crown, Lock, Play, Image as ImageIcon, Check } from "lucide-react";
+import {
+  Crown,
+  Lock,
+  Play,
+  Image as ImageIcon,
+  Check,
+  History,
+  ShoppingBag,
+  Star,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { vipContent } from "@/lib/mock-data";
 import { PageHeader, fmt } from "@/components/ui-bits";
+import {
+  createTelegramStarsInvoice,
+  listMyTelegramStarsPurchases,
+  listTelegramStarsProducts,
+} from "@/lib/telegram-stars.functions";
 import {
   fallbackVipPlans,
   listPublicVipPlans,
@@ -15,6 +29,8 @@ export const Route = createFileRoute("/_app/vip")({
 });
 
 const WEB_WALLET_SESSION_KEY = "walletbred-web-user-id";
+type StarsProduct = Awaited<ReturnType<typeof listTelegramStarsProducts>>[number];
+type StarsPurchase = Awaited<ReturnType<typeof listMyTelegramStarsPurchases>>[number];
 
 function getOrCreateWebWalletId() {
   const current = window.localStorage.getItem(WEB_WALLET_SESSION_KEY);
@@ -31,13 +47,25 @@ function getOrCreateWebWalletId() {
 
 function VipPage() {
   const loadPlans = useServerFn(listPublicVipPlans);
+  const loadStarsProducts = useServerFn(listTelegramStarsProducts);
+  const loadStarsPurchases = useServerFn(listMyTelegramStarsPurchases);
+  const createStarsInvoice = useServerFn(createTelegramStarsInvoice);
   const loadPlansRef = useRef(loadPlans);
+  const loadStarsProductsRef = useRef(loadStarsProducts);
+  const loadStarsPurchasesRef = useRef(loadStarsPurchases);
+  const createStarsInvoiceRef = useRef(createStarsInvoice);
   const [plans, setPlans] = useState<PublicVipPlan[]>(fallbackVipPlans);
+  const [starsProducts, setStarsProducts] = useState<StarsProduct[]>([]);
+  const [starsPurchases, setStarsPurchases] = useState<StarsPurchase[]>([]);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const [loadingStarsProduct, setLoadingStarsProduct] = useState<string | null>(null);
   const [selectedCurrencies, setSelectedCurrencies] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   loadPlansRef.current = loadPlans;
+  loadStarsProductsRef.current = loadStarsProducts;
+  loadStarsPurchasesRef.current = loadStarsPurchases;
+  createStarsInvoiceRef.current = createStarsInvoice;
 
   useEffect(() => {
     void loadPlansRef
@@ -54,7 +82,21 @@ function VipPage() {
       .catch(() => {
         setPlans(fallbackVipPlans);
       });
+
+    void loadStarsProductsRef.current().then(setStarsProducts).catch(console.warn);
+    void loadStarsPurchasesRef
+      .current()
+      .then(setStarsPurchases)
+      .catch(() => setStarsPurchases([]));
   }, []);
+
+  async function refreshStarsPurchases() {
+    try {
+      setStarsPurchases(await loadStarsPurchasesRef.current());
+    } catch {
+      setStarsPurchases([]);
+    }
+  }
 
   async function subscribe(planId: string) {
     const initData = (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp
@@ -87,6 +129,40 @@ function VipPage() {
       );
     } finally {
       setLoadingPlan(null);
+    }
+  }
+
+  async function buyWithStars(productId: string) {
+    const tg = (
+      window as {
+        Telegram?: {
+          WebApp?: {
+            initData?: string;
+            openInvoice?: (url: string, cb?: (status: string) => void) => void;
+          };
+        };
+      }
+    ).Telegram?.WebApp;
+
+    setError(null);
+    setLoadingStarsProduct(productId);
+    try {
+      const { invoiceUrl } = await createStarsInvoiceRef.current({ data: { productId } });
+      if (tg?.openInvoice) {
+        tg.openInvoice(invoiceUrl, () => {
+          void refreshStarsPurchases();
+        });
+      } else {
+        window.location.href = invoiceUrl;
+      }
+    } catch (starsError) {
+      setError(
+        starsError instanceof Error
+          ? starsError.message
+          : "No se pudo abrir el pago con Telegram Stars.",
+      );
+    } finally {
+      setLoadingStarsProduct(null);
     }
   }
 
@@ -125,6 +201,56 @@ function VipPage() {
         ))}
       </div>
 
+      <h2 className="mb-3 mt-6 flex items-center gap-2 font-display text-base font-semibold">
+        <ShoppingBag className="h-4 w-4 text-primary" />
+        Telegram Store
+      </h2>
+      <div className="grid gap-3 md:grid-cols-3">
+        {starsProducts.length ? (
+          starsProducts.map((product) => (
+            <StarsProductCard
+              key={product.id}
+              product={product}
+              loading={loadingStarsProduct === product.id}
+              disabled={loadingStarsProduct !== null}
+              onBuy={() => void buyWithStars(product.id)}
+            />
+          ))
+        ) : (
+          <div className="rounded-3xl glass p-5 text-sm text-muted-foreground md:col-span-3">
+            No hay productos con Stars activos.
+          </div>
+        )}
+      </div>
+
+      <h2 className="mb-3 mt-6 flex items-center gap-2 font-display text-base font-semibold">
+        <History className="h-4 w-4 text-primary" />
+        Historial de compras
+      </h2>
+      <div className="rounded-3xl glass p-2 shadow-card">
+        {starsPurchases.length ? (
+          starsPurchases.map((purchase) => (
+            <div key={purchase.id} className="flex items-center gap-3 rounded-2xl px-3 py-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+                <Star className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{purchase.productTitle}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {purchase.status} · entrega {purchase.deliveryStatus} ·{" "}
+                  {new Date(purchase.createdAt).toLocaleString("es-MX")}
+                </p>
+              </div>
+              <span className="shrink-0 text-sm font-semibold">{purchase.totalAmount} XTR</span>
+            </div>
+          ))
+        ) : (
+          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+            Tus compras con Telegram Stars apareceran aqui.
+          </p>
+        )}
+      </div>
+
       <h2 className="mb-3 mt-6 font-display text-base font-semibold">Premium drops</h2>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {vipContent.map((c) => (
@@ -152,6 +278,50 @@ function VipPage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function StarsProductCard({
+  product,
+  loading,
+  disabled,
+  onBuy,
+}: {
+  product: StarsProduct;
+  loading: boolean;
+  disabled: boolean;
+  onBuy: () => void;
+}) {
+  return (
+    <div className="rounded-3xl glass p-5 shadow-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-display text-lg font-bold">{product.title}</p>
+          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{product.description}</p>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary">
+          <Star className="h-3.5 w-3.5" />
+          {product.starsAmount} XTR
+        </span>
+      </div>
+      {product.content.length > 0 && (
+        <ul className="mt-3 space-y-1.5">
+          {product.content.slice(0, 3).map((item) => (
+            <li key={item.id} className="truncate text-xs text-muted-foreground">
+              {item.title}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        onClick={onBuy}
+        disabled={disabled}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl gradient-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+      >
+        <Star className="h-4 w-4" />
+        {loading ? "Abriendo pago..." : "Comprar con Stars"}
+      </button>
     </div>
   );
 }
