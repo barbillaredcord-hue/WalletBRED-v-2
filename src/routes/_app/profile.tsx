@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import {
   Bell,
   ClipboardList,
@@ -15,6 +16,8 @@ import {
 import { useState } from "react";
 import { Card, PageHeader } from "@/components/ui-bits";
 import { useWalletSnapshot } from "@/hooks/use-wallet";
+import { logoutWebWalletUser } from "@/lib/web-auth.functions";
+import { clearWebSessionToken, getStoredWebSessionToken } from "@/lib/web-auth.shared";
 
 export const Route = createFileRoute("/_app/profile")({
   component: ProfilePage,
@@ -22,6 +25,7 @@ export const Route = createFileRoute("/_app/profile")({
 
 function ProfilePage() {
   const { snapshot } = useWalletSnapshot();
+  const logoutWeb = useServerFn(logoutWebWalletUser);
   const { user, stats } = snapshot;
   const [message, setMessage] = useState<string | null>(null);
 
@@ -36,9 +40,17 @@ function ProfilePage() {
     );
   }
 
-  function signOut() {
+  async function signOut() {
+    const sessionToken = getStoredWebSessionToken();
+    if (sessionToken) {
+      try {
+        await logoutWeb({ data: { sessionToken } });
+      } catch {
+        // Local logout still clears the browser session if the server is unreachable.
+      }
+    }
     window.sessionStorage.removeItem("wallet-glow-demo");
-    window.localStorage.removeItem("walletbred-web-user-id");
+    clearWebSessionToken();
     window.location.href = "/";
   }
 
@@ -108,7 +120,7 @@ function ProfilePage() {
       </div>
 
       <button
-        onClick={signOut}
+        onClick={() => void signOut()}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-destructive/15 py-3 text-sm font-semibold text-destructive"
       >
         <LogOut className="h-4 w-4" /> Sign out

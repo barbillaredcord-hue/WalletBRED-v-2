@@ -23,27 +23,14 @@ import {
   listPublicVipPlans,
   type PublicVipPlan,
 } from "@/lib/vip-plans.functions";
+import { getStoredWebSessionToken, WEB_WALLET_SESSION_HEADER } from "@/lib/web-auth.shared";
 
 export const Route = createFileRoute("/_app/vip")({
   component: VipPage,
 });
 
-const WEB_WALLET_SESSION_KEY = "walletbred-web-user-id";
 type StarsProduct = Awaited<ReturnType<typeof listTelegramStarsProducts>>[number];
 type StarsPurchase = Awaited<ReturnType<typeof listMyTelegramStarsPurchases>>[number];
-
-function getOrCreateWebWalletId() {
-  const current = window.localStorage.getItem(WEB_WALLET_SESSION_KEY);
-  if (current) return current;
-
-  const random =
-    typeof window.crypto?.randomUUID === "function"
-      ? window.crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const next = `web_${random}`;
-  window.localStorage.setItem(WEB_WALLET_SESSION_KEY, next);
-  return next;
-}
 
 function VipPage() {
   const loadPlans = useServerFn(listPublicVipPlans);
@@ -109,7 +96,11 @@ function VipPage() {
         "content-type": "application/json",
       };
       if (initData) headers.authorization = `tma ${initData}`;
-      else headers["x-wallet-web-user"] = getOrCreateWebWalletId();
+      else {
+        const sessionToken = getStoredWebSessionToken();
+        if (!sessionToken) throw new Error("Inicia sesion o registrate para comprar desde web.");
+        headers[WEB_WALLET_SESSION_HEADER] = sessionToken;
+      }
 
       const response = await fetch("/api/stripe/checkout", {
         method: "POST",

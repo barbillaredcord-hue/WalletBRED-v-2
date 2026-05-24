@@ -23,6 +23,7 @@ import {
   verifyInitData,
   type VerifiedTelegramUser,
 } from "./telegram-auth.server";
+import { getStoredWebSessionToken, WEB_WALLET_SESSION_HEADER } from "@/lib/web-auth.shared";
 
 export type TelegramAuthContext = {
   telegramUser: VerifiedTelegramUser;
@@ -64,8 +65,6 @@ export type WalletAuthContext =
       };
     };
 
-const WEB_WALLET_SESSION_KEY = "walletbred-web-user-id";
-const WEB_WALLET_HEADER = "x-wallet-web-user";
 const ADMIN_WEB_KEY_HEADER = "x-admin-web-key";
 export const ADMIN_WEB_KEY_STORAGE = "walletbred-admin-web-key";
 
@@ -152,43 +151,27 @@ function telegramContextToWallet(ctx: TelegramAuthContext): WalletAuthContext {
   };
 }
 
-function webWalletIdFromHeader() {
-  const value = getRequestHeader(WEB_WALLET_HEADER);
-  if (!value || !/^web_[a-zA-Z0-9._:-]{8,100}$/.test(value)) {
-    throw new Response("Unauthorized web wallet", { status: 401 });
+async function webContextFromSessionHeader(): Promise<WalletAuthContext> {
+  const token = getRequestHeader(WEB_WALLET_SESSION_HEADER);
+  const { validateWebSessionToken } = await import("@/lib/web-auth.server");
+  const user = await validateWebSessionToken(token);
+  if (!user) {
+    throw new Response("Necesitas iniciar sesion o registrarte para usar WalletBRED web.", {
+      status: 401,
+    });
   }
-  return value;
-}
-
-function webContextFromHeader(): WalletAuthContext {
-  const webUserId = webWalletIdFromHeader();
-  const shortId = webUserId.replace(/^web_/, "").slice(0, 8).toUpperCase();
+  const shortId = user.id.replace(/^web_/, "").slice(0, 8).toUpperCase();
   return {
     walletUser: {
       source: "web",
-      id: webUserId,
-      name: "WalletBRED Web",
+      id: user.id,
+      name: user.fullName,
       handle: `WEB-${shortId}`,
-      avatar: "WB",
+      avatar: initials(user.fullName || "WB"),
       telegramUserId: null,
-      webUserId,
+      webUserId: user.id,
     },
   };
-}
-
-function getOrCreateWebWalletId() {
-  if (typeof window === "undefined") return undefined;
-  const current = window.localStorage.getItem(WEB_WALLET_SESSION_KEY);
-  if (current) return current;
-
-  const cryptoApi = window.crypto;
-  const random =
-    typeof cryptoApi?.randomUUID === "function"
-      ? cryptoApi.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const next = `web_${random}`;
-  window.localStorage.setItem(WEB_WALLET_SESSION_KEY, next);
-  return next;
 }
 
 export const requireTelegramUser = createMiddleware({ type: "function" })
@@ -212,12 +195,12 @@ export const requireWalletUser = createMiddleware({ type: "function" })
       typeof window !== "undefined"
         ? (window as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData
         : undefined;
-    const webWalletId = initData ? undefined : getOrCreateWebWalletId();
+    const webSessionToken = initData ? undefined : getStoredWebSessionToken();
     return next({
       headers: initData
         ? { Authorization: `tma ${initData}` }
-        : webWalletId
-          ? { [WEB_WALLET_HEADER]: webWalletId }
+        : webSessionToken
+          ? { [WEB_WALLET_SESSION_HEADER]: webSessionToken }
           : {},
     });
   })
@@ -227,7 +210,7 @@ export const requireWalletUser = createMiddleware({ type: "function" })
       return next({ context: telegramContextToWallet(ctx) });
     } catch (error) {
       if (error instanceof Response && error.status === 401) {
-        return next({ context: webContextFromHeader() });
+        return next({ context: await webContextFromSessionHeader() });
       }
       throw error;
     }

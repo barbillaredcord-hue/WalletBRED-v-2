@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getAppUrl, getStripe, getVipPlanPrice } from "@/lib/stripe.server";
 import { extractInitDataFromAuthHeader, verifyInitData } from "@/lib/telegram-auth.server";
+import { validateWebSessionToken } from "@/lib/web-auth.server";
+import { WEB_WALLET_SESSION_HEADER } from "@/lib/web-auth.shared";
 
 const checkoutSchema = z.object({
   planId: z.string(),
@@ -19,20 +20,18 @@ type CheckoutUser = {
   metadata: Record<string, string>;
 };
 
-function webWalletIdFromRequest(request: Request) {
-  const value = request.headers.get("x-wallet-web-user");
-  return value && /^web_[a-zA-Z0-9._:-]{8,100}$/.test(value) ? value : null;
-}
-
-function getCheckoutUser(request: Request): CheckoutUser {
+async function getCheckoutUser(request: Request): Promise<CheckoutUser> {
   const initData = extractInitDataFromAuthHeader(request.headers.get("authorization"));
   if (!initData) {
-    const webId = webWalletIdFromRequest(request) ?? `web_checkout_${randomUUID()}`;
+    const webUser = await validateWebSessionToken(request.headers.get(WEB_WALLET_SESSION_HEADER));
+    if (!webUser)
+      throw new Response("Inicia sesion o registrate para comprar desde web.", { status: 401 });
     return {
-      id: webId,
+      id: webUser.id,
       metadata: {
         source: "web",
-        web_user_id: webId,
+        web_user_id: webUser.id,
+        web_user_email: webUser.email,
       },
     };
   }
@@ -58,7 +57,7 @@ export const Route = createFileRoute("/api/stripe/checkout")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const checkoutUser = getCheckoutUser(request);
+        const checkoutUser = await getCheckoutUser(request);
         const body = checkoutSchema.parse(await request.json());
         const planPrice = await getVipPlanPrice(body.planId);
         const appUrl = getAppUrl(request);
