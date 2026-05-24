@@ -13,6 +13,8 @@ const WALLET_WEB_USER_MIGRATION =
   "supabase/migrations/20260522201000_add_web_user_id_to_wallet_movements.sql";
 const BANKING_PREPARATION_MIGRATION =
   "supabase/migrations/20260523061000_add_banking_preparation.sql";
+const WEB_WALLET_REGISTRATION_MIGRATION =
+  "supabase/migrations/20260524150007_add_web_wallet_registration.sql";
 
 const requiredVercelEnv = [
   "APP_URL",
@@ -191,6 +193,7 @@ async function migrateSupabase() {
     PAYMENT_INTENT_MIGRATION,
     WALLET_WEB_USER_MIGRATION,
     BANKING_PREPARATION_MIGRATION,
+    WEB_WALLET_REGISTRATION_MIGRATION,
   ];
   for (const migration of migrations) {
     if (!existsSync(migration)) {
