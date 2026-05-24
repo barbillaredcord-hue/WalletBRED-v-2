@@ -38,6 +38,154 @@ export type Database = {
         };
         Relationships: [];
       };
+      premium_content_items: {
+        Row: {
+          access_level: string;
+          active: boolean;
+          content_type: string;
+          content_url: string | null;
+          created_at: string;
+          id: string;
+          preview: string;
+          product_id: string | null;
+          sort_order: number;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          access_level?: string;
+          active?: boolean;
+          content_type?: string;
+          content_url?: string | null;
+          created_at?: string;
+          id?: string;
+          preview?: string;
+          product_id?: string | null;
+          sort_order?: number;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          access_level?: string;
+          active?: boolean;
+          content_type?: string;
+          content_url?: string | null;
+          created_at?: string;
+          id?: string;
+          preview?: string;
+          product_id?: string | null;
+          sort_order?: number;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "premium_content_items_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "premium_products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      premium_products: {
+        Row: {
+          active: boolean;
+          created_at: string;
+          description: string;
+          external_url: string | null;
+          featured: boolean;
+          id: string;
+          kind: string;
+          price_amount_cents: number;
+          price_currency: string;
+          slug: string;
+          sort_order: number;
+          stars_amount: number | null;
+          stripe_price_id: string | null;
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          active?: boolean;
+          created_at?: string;
+          description?: string;
+          external_url?: string | null;
+          featured?: boolean;
+          id?: string;
+          kind: string;
+          price_amount_cents: number;
+          price_currency?: string;
+          slug: string;
+          sort_order?: number;
+          stars_amount?: number | null;
+          stripe_price_id?: string | null;
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          active?: boolean;
+          created_at?: string;
+          description?: string;
+          external_url?: string | null;
+          featured?: boolean;
+          id?: string;
+          kind?: string;
+          price_amount_cents?: number;
+          price_currency?: string;
+          slug?: string;
+          sort_order?: number;
+          stars_amount?: number | null;
+          stripe_price_id?: string | null;
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      premium_user_entitlements: {
+        Row: {
+          created_at: string;
+          expires_at: string | null;
+          id: string;
+          product_id: string | null;
+          source: string;
+          status: string;
+          telegram_user_id: number | null;
+          updated_at: string;
+          web_user_id: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          expires_at?: string | null;
+          id?: string;
+          product_id?: string | null;
+          source?: string;
+          status?: string;
+          telegram_user_id?: number | null;
+          updated_at?: string;
+          web_user_id?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          expires_at?: string | null;
+          id?: string;
+          product_id?: string | null;
+          source?: string;
+          status?: string;
+          telegram_user_id?: number | null;
+          updated_at?: string;
+          web_user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "premium_user_entitlements_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "premium_products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       wallet_movements: {
         Row: {
           amount: number | null;

@@ -55,6 +55,47 @@ type AdminAccessGrant = {
   updated_at: string;
 };
 
+type AdminPremiumProduct = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  kind: string;
+  price_amount_cents: number;
+  price_currency: string;
+  stars_amount: number | null;
+  stripe_price_id: string | null;
+  external_url: string | null;
+  active: boolean;
+  featured: boolean;
+  sort_order: number;
+  updated_at: string;
+};
+
+type AdminPremiumContent = {
+  id: string;
+  product_id: string | null;
+  title: string;
+  content_type: string;
+  preview: string;
+  content_url: string | null;
+  access_level: string;
+  active: boolean;
+  sort_order: number;
+  updated_at: string;
+};
+
+type AdminPremiumEntitlement = {
+  id: string;
+  product_id: string | null;
+  telegram_user_id: number | null;
+  web_user_id: string | null;
+  source: string;
+  status: string;
+  expires_at: string | null;
+  updated_at: string;
+};
+
 const cancelTransferSchema = z.object({
   movementId: z.string().uuid(),
   reason: z.string().trim().min(4).max(180),
@@ -107,6 +148,53 @@ const accessGrantSchema = z.object({
     .regex(/^\d{4,30}$/),
   role: z.enum(["owner", "admin", "support"]).default("admin"),
   active: z.boolean().default(true),
+});
+
+const premiumProductSchema = z.object({
+  id: z.string().uuid().optional(),
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(80)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  title: z.string().trim().min(2).max(100),
+  description: z.string().trim().max(240).default(""),
+  kind: z.enum(["premium_content", "telegram_store", "stars_pack", "crypto_external"]),
+  amount: z.number().positive().max(100000),
+  currency: z.string().trim().min(3).max(3).default("USD"),
+  starsAmount: z.number().int().positive().max(1000000).optional(),
+  stripePriceId: z.string().trim().max(120).optional(),
+  externalUrl: z.string().trim().max(240).optional(),
+  featured: z.boolean().default(false),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(999).default(100),
+});
+
+const premiumContentSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+  title: z.string().trim().min(2).max(120),
+  contentType: z.enum(["post", "video", "image", "file", "link", "ai_prompt"]),
+  preview: z.string().trim().max(320).default(""),
+  contentUrl: z.string().trim().max(240).optional(),
+  accessLevel: z.enum(["free", "paid", "vip", "stars"]),
+  active: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).max(999).default(100),
+});
+
+const entitlementSchema = z.object({
+  id: z.string().uuid().optional(),
+  productId: z.string().uuid(),
+  telegramUserId: z
+    .string()
+    .trim()
+    .regex(/^\d{4,30}$/)
+    .optional(),
+  webUserId: z.string().trim().max(120).optional(),
+  source: z.string().trim().min(2).max(40).default("admin"),
+  status: z.enum(["active", "expired", "revoked", "pending"]).default("active"),
+  expiresAt: z.string().trim().max(40).optional(),
 });
 
 function adminId(context: unknown) {
@@ -210,6 +298,9 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       { data: subscriptionRows },
       { data: planRows },
       { data: grantRows },
+      { data: premiumProductRows },
+      { data: premiumContentRows },
+      { data: entitlementRows },
     ] = await Promise.all([
       supabaseAdmin
         .from("wallet_movements")
@@ -235,6 +326,23 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
         .from("admin_access_grants")
         .select("id,label,telegram_user_id,role,active,updated_at")
         .order("created_at", { ascending: true }),
+      supabaseAdmin
+        .from("premium_products")
+        .select(
+          "id,slug,title,description,kind,price_amount_cents,price_currency,stars_amount,stripe_price_id,external_url,active,featured,sort_order,updated_at",
+        )
+        .order("sort_order", { ascending: true }),
+      supabaseAdmin
+        .from("premium_content_items")
+        .select(
+          "id,product_id,title,content_type,preview,content_url,access_level,active,sort_order,updated_at",
+        )
+        .order("sort_order", { ascending: true }),
+      supabaseAdmin
+        .from("premium_user_entitlements")
+        .select("id,product_id,telegram_user_id,web_user_id,source,status,expires_at,updated_at")
+        .order("created_at", { ascending: false })
+        .limit(200),
     ]);
 
     if (movementError) throw movementError;
@@ -347,6 +455,46 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
         active: grant.active,
         updatedAt: grant.updated_at,
       })),
+      premiumProducts: ((premiumProductRows ?? []) as AdminPremiumProduct[]).map((product) => ({
+        id: product.id,
+        slug: product.slug,
+        title: product.title,
+        description: product.description,
+        kind: product.kind,
+        amount: product.price_amount_cents / 100,
+        currency: product.price_currency.toUpperCase(),
+        starsAmount: product.stars_amount ?? 0,
+        stripePriceId: product.stripe_price_id ?? "",
+        externalUrl: product.external_url ?? "",
+        featured: product.featured,
+        active: product.active,
+        sortOrder: product.sort_order,
+        updatedAt: product.updated_at,
+      })),
+      premiumContent: ((premiumContentRows ?? []) as AdminPremiumContent[]).map((content) => ({
+        id: content.id,
+        productId: content.product_id ?? "",
+        title: content.title,
+        contentType: content.content_type,
+        preview: content.preview,
+        contentUrl: content.content_url ?? "",
+        accessLevel: content.access_level,
+        active: content.active,
+        sortOrder: content.sort_order,
+        updatedAt: content.updated_at,
+      })),
+      premiumEntitlements: ((entitlementRows ?? []) as AdminPremiumEntitlement[]).map(
+        (entitlement) => ({
+          id: entitlement.id,
+          productId: entitlement.product_id ?? "",
+          telegramUserId: entitlement.telegram_user_id?.toString() ?? "",
+          webUserId: entitlement.web_user_id ?? "",
+          source: entitlement.source,
+          status: entitlement.status,
+          expiresAt: entitlement.expires_at ?? "",
+          updatedAt: entitlement.updated_at,
+        }),
+      ),
       files: await listStorageFiles(),
     };
   });
@@ -459,6 +607,96 @@ export const saveAdminAccessGrant = createServerFn({ method: "POST" })
       : await supabaseAdmin
           .from("admin_access_grants")
           .upsert(payload, { onConflict: "telegram_user_id" });
+
+    if (error) throw error;
+    return { ok: true as const };
+  });
+
+export const saveAdminPremiumProduct = createServerFn({ method: "POST" })
+  .middleware([requireAdminUser])
+  .inputValidator((input: unknown) => premiumProductSchema.parse(input))
+  .handler(async ({ data }) => {
+    const stripePriceId = data.stripePriceId?.trim() || null;
+    if (stripePriceId && !stripePriceId.startsWith("price_")) {
+      throw new Response("Stripe Price ID debe empezar con price_.", { status: 400 });
+    }
+
+    const externalUrl = data.externalUrl?.trim() || null;
+    if (externalUrl && !/^https?:\/\//.test(externalUrl)) {
+      throw new Response("El enlace externo debe empezar con http:// o https://.", {
+        status: 400,
+      });
+    }
+
+    const payload = {
+      slug: data.slug,
+      title: data.title,
+      description: data.description,
+      kind: data.kind,
+      price_amount_cents: Math.round(data.amount * 100),
+      price_currency: data.currency.toLowerCase(),
+      stars_amount: data.starsAmount || null,
+      stripe_price_id: stripePriceId,
+      external_url: externalUrl,
+      featured: data.featured,
+      active: data.active,
+      sort_order: data.sortOrder,
+    };
+
+    const { error } = data.id
+      ? await supabaseAdmin.from("premium_products").update(payload).eq("id", data.id)
+      : await supabaseAdmin.from("premium_products").insert(payload);
+
+    if (error) throw error;
+    return { ok: true as const };
+  });
+
+export const saveAdminPremiumContent = createServerFn({ method: "POST" })
+  .middleware([requireAdminUser])
+  .inputValidator((input: unknown) => premiumContentSchema.parse(input))
+  .handler(async ({ data }) => {
+    const payload = {
+      product_id: data.productId || null,
+      title: data.title,
+      content_type: data.contentType,
+      preview: data.preview,
+      content_url: data.contentUrl?.trim() || null,
+      access_level: data.accessLevel,
+      active: data.active,
+      sort_order: data.sortOrder,
+    };
+
+    const { error } = data.id
+      ? await supabaseAdmin.from("premium_content_items").update(payload).eq("id", data.id)
+      : await supabaseAdmin.from("premium_content_items").insert(payload);
+
+    if (error) throw error;
+    return { ok: true as const };
+  });
+
+export const saveAdminPremiumEntitlement = createServerFn({ method: "POST" })
+  .middleware([requireAdminUser])
+  .inputValidator((input: unknown) => entitlementSchema.parse(input))
+  .handler(async ({ data }) => {
+    const telegramUserId = data.telegramUserId ? Number(data.telegramUserId) : null;
+    const webUserId = data.webUserId?.trim() || null;
+
+    if (!telegramUserId && !webUserId) {
+      throw new Response("Agrega Telegram ID o Web User ID.", { status: 400 });
+    }
+
+    const payload = {
+      product_id: data.productId,
+      telegram_user_id: telegramUserId,
+      web_user_id: webUserId,
+      source: data.source,
+      status: data.status,
+      expires_at: data.expiresAt?.trim() || null,
+    };
+
+    const { error } = data.id
+      ? await supabaseAdmin.from("premium_user_entitlements").update(payload).eq("id", data.id)
+      : await supabaseAdmin.from("premium_user_entitlements").insert(payload);
 
     if (error) throw error;
     return { ok: true as const };

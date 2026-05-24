@@ -4,8 +4,10 @@ import {
   Ban,
   Database,
   FileText,
+  Gift,
   KeyRound,
   Loader2,
+  Package,
   Pencil,
   Plus,
   RefreshCw,
@@ -21,6 +23,9 @@ import {
   cancelAdminTransfer,
   getAdminDashboard,
   saveAdminAccessGrant,
+  saveAdminPremiumContent,
+  saveAdminPremiumEntitlement,
+  saveAdminPremiumProduct,
   saveAdminVipPlan,
   updateAdminMovement,
 } from "@/lib/admin.functions";
@@ -32,6 +37,11 @@ export const Route = createFileRoute("/_app/admin")({
 type AdminData = Awaited<ReturnType<typeof getAdminDashboard>>;
 type AdminTransfer = NonNullable<AdminData>["transfers"][number];
 type AdminMovementRow = NonNullable<AdminData>["movements"][number];
+type AdminPremiumProductRow = NonNullable<AdminData>["premiumProducts"][number];
+type AdminPremiumContentRow = NonNullable<AdminData>["premiumContent"][number];
+type PremiumKind = "premium_content" | "telegram_store" | "stars_pack" | "crypto_external";
+type PremiumContentType = "post" | "video" | "image" | "file" | "link" | "ai_prompt";
+type PremiumAccessLevel = "free" | "paid" | "vip" | "stars";
 type AdminRole = "owner" | "admin" | "support";
 const ADMIN_WEB_KEY_STORAGE = "walletbred-admin-web-key";
 
@@ -47,11 +57,17 @@ function AdminPage() {
   const cancelTransfer = useServerFn(cancelAdminTransfer);
   const savePlan = useServerFn(saveAdminVipPlan);
   const saveAccess = useServerFn(saveAdminAccessGrant);
+  const saveProduct = useServerFn(saveAdminPremiumProduct);
+  const saveContent = useServerFn(saveAdminPremiumContent);
+  const saveEntitlement = useServerFn(saveAdminPremiumEntitlement);
   const updateMovement = useServerFn(updateAdminMovement);
   const loadDashboardRef = useRef(loadDashboard);
   const cancelTransferRef = useRef(cancelTransfer);
   const savePlanRef = useRef(savePlan);
   const saveAccessRef = useRef(saveAccess);
+  const saveProductRef = useRef(saveProduct);
+  const saveContentRef = useRef(saveContent);
+  const saveEntitlementRef = useRef(saveEntitlement);
   const updateMovementRef = useRef(updateMovement);
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +79,9 @@ function AdminPage() {
   } | null>(null);
   const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [savingAccessId, setSavingAccessId] = useState<string | null>(null);
+  const [savingProductId, setSavingProductId] = useState<string | null>(null);
+  const [savingContentId, setSavingContentId] = useState<string | null>(null);
+  const [savingEntitlementId, setSavingEntitlementId] = useState<string | null>(null);
   const [savingMovementId, setSavingMovementId] = useState<string | null>(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>("all");
   const [editingMovement, setEditingMovement] = useState<AdminMovementRow | null>(null);
@@ -79,12 +98,75 @@ function AdminPage() {
     role: "admin",
     active: true,
   });
+  const [newProduct, setNewProduct] = useState<{
+    slug: string;
+    title: string;
+    description: string;
+    kind: PremiumKind;
+    amount: number;
+    currency: string;
+    starsAmount: number;
+    stripePriceId: string;
+    externalUrl: string;
+    featured: boolean;
+    active: boolean;
+    sortOrder: number;
+  }>({
+    slug: "",
+    title: "",
+    description: "",
+    kind: "premium_content",
+    amount: 25,
+    currency: "USD",
+    starsAmount: 0,
+    stripePriceId: "",
+    externalUrl: "",
+    featured: false,
+    active: true,
+    sortOrder: 100,
+  });
+  const [newContent, setNewContent] = useState<{
+    productId: string;
+    title: string;
+    contentType: PremiumContentType;
+    preview: string;
+    contentUrl: string;
+    accessLevel: PremiumAccessLevel;
+    active: boolean;
+    sortOrder: number;
+  }>({
+    productId: "",
+    title: "",
+    contentType: "post",
+    preview: "",
+    contentUrl: "",
+    accessLevel: "paid",
+    active: true,
+    sortOrder: 100,
+  });
+  const [newEntitlement, setNewEntitlement] = useState<{
+    productId: string;
+    telegramUserId: string;
+    webUserId: string;
+    source: string;
+    status: "active" | "expired" | "revoked" | "pending";
+    expiresAt: string;
+  }>({
+    productId: "",
+    telegramUserId: "",
+    webUserId: "",
+    source: "admin",
+    status: "active",
+    expiresAt: "",
+  });
 
   const stats = useMemo(
     () => ({
       users: data?.users.length ?? 0,
       transfers: data?.transfers.length ?? 0,
       accesses: data?.accesses.length ?? 0,
+      products: data?.premiumProducts.length ?? 0,
+      content: data?.premiumContent.length ?? 0,
       files: data?.files.length ?? 0,
     }),
     [data],
@@ -108,6 +190,9 @@ function AdminPage() {
   cancelTransferRef.current = cancelTransfer;
   savePlanRef.current = savePlan;
   saveAccessRef.current = saveAccess;
+  saveProductRef.current = saveProduct;
+  saveContentRef.current = saveContent;
+  saveEntitlementRef.current = saveEntitlement;
   updateMovementRef.current = updateMovement;
 
   const refresh = useCallback(async () => {
@@ -217,6 +302,97 @@ function AdminPage() {
     }
   }
 
+  async function savePremiumProduct(
+    product: Omit<AdminPremiumProductRow, "id" | "updatedAt"> & {
+      id?: string;
+    },
+  ) {
+    setSavingProductId(product.id ?? "new");
+    setMessage(null);
+    try {
+      await saveProductRef.current({ data: product });
+      setMessage("Producto premium actualizado.");
+      if (!product.id) {
+        setNewProduct({
+          slug: "",
+          title: "",
+          description: "",
+          kind: "premium_content",
+          amount: 25,
+          currency: "USD",
+          starsAmount: 0,
+          stripePriceId: "",
+          externalUrl: "",
+          featured: false,
+          active: true,
+          sortOrder: 100,
+        });
+      }
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo guardar el producto.");
+    } finally {
+      setSavingProductId(null);
+    }
+  }
+
+  async function savePremiumContent(
+    content: Omit<AdminPremiumContentRow, "id" | "updatedAt"> & {
+      id?: string;
+    },
+  ) {
+    setSavingContentId(content.id ?? "new");
+    setMessage(null);
+    try {
+      await saveContentRef.current({ data: content });
+      setMessage("Contenido premium actualizado.");
+      if (!content.id) {
+        setNewContent({
+          productId: "",
+          title: "",
+          contentType: "post",
+          preview: "",
+          contentUrl: "",
+          accessLevel: "paid",
+          active: true,
+          sortOrder: 100,
+        });
+      }
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo guardar el contenido.");
+    } finally {
+      setSavingContentId(null);
+    }
+  }
+
+  async function grantPremiumEntitlement() {
+    if (!newEntitlement.productId) {
+      setMessage("Elige un producto antes de dar acceso.");
+      return;
+    }
+
+    setSavingEntitlementId("new");
+    setMessage(null);
+    try {
+      await saveEntitlementRef.current({ data: newEntitlement });
+      setMessage("Acceso premium guardado.");
+      setNewEntitlement({
+        productId: "",
+        telegramUserId: "",
+        webUserId: "",
+        source: "admin",
+        status: "active",
+        expiresAt: "",
+      });
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo dar acceso premium.");
+    } finally {
+      setSavingEntitlementId(null);
+    }
+  }
+
   async function saveMovementChanges(movement: AdminMovementRow) {
     setSavingMovementId(movement.id);
     setMessage(null);
@@ -318,8 +494,8 @@ function AdminPage() {
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric icon={Users} label="Usuarios" value={stats.users} />
         <Metric icon={Ban} label="Transferencias" value={stats.transfers} />
-        <Metric icon={KeyRound} label="Accesos" value={stats.accesses} />
-        <Metric icon={FileText} label="Archivos" value={stats.files} />
+        <Metric icon={Package} label="Productos" value={stats.products} />
+        <Metric icon={FileText} label="Contenido" value={stats.content} />
       </div>
 
       <AdminSection title="Usuarios reales" icon={Users}>
@@ -532,6 +708,371 @@ function AdminPage() {
           ))
         ) : (
           <Empty text={loading ? "Cargando planes..." : "Sin planes configurados."} />
+        )}
+      </AdminSection>
+
+      <AdminSection title="Productos premium" icon={Package}>
+        <div className="rounded-2xl px-3 py-3">
+          <div className="grid gap-2 md:grid-cols-[1fr_1fr_150px_110px_auto]">
+            <input
+              value={newProduct.title}
+              onChange={(event) =>
+                setNewProduct((draft) => ({
+                  ...draft,
+                  title: event.target.value,
+                  slug: draft.slug || slugify(event.target.value),
+                }))
+              }
+              placeholder="Nombre del producto"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <input
+              value={newProduct.slug}
+              onChange={(event) =>
+                setNewProduct((draft) => ({ ...draft, slug: slugify(event.target.value) }))
+              }
+              placeholder="slug-del-producto"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <select
+              value={newProduct.kind}
+              onChange={(event) =>
+                setNewProduct((draft) => ({
+                  ...draft,
+                  kind: event.target.value as PremiumKind,
+                }))
+              }
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="premium_content">Contenido</option>
+              <option value="telegram_store">Telegram Store</option>
+              <option value="stars_pack">Stars</option>
+              <option value="crypto_external">Crypto externo</option>
+            </select>
+            <input
+              value={newProduct.amount}
+              onChange={(event) =>
+                setNewProduct((draft) => ({ ...draft, amount: Number(event.target.value) || 0 }))
+              }
+              type="number"
+              min="1"
+              step="1"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <button
+              onClick={() => void savePremiumProduct(newProduct)}
+              disabled={savingProductId === "new"}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl gradient-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {savingProductId === "new" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              Agregar
+            </button>
+          </div>
+          <textarea
+            value={newProduct.description}
+            onChange={(event) =>
+              setNewProduct((draft) => ({ ...draft, description: event.target.value }))
+            }
+            placeholder="Descripcion visible para tienda, bot o contenido premium"
+            className="mt-2 min-h-16 w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+          <div className="mt-2 grid gap-2 md:grid-cols-[90px_120px_1fr_1fr_100px_100px]">
+            <input
+              value={newProduct.currency}
+              onChange={(event) =>
+                setNewProduct((draft) => ({
+                  ...draft,
+                  currency: event.target.value.toUpperCase().replace(/[^A-Z]/g, ""),
+                }))
+              }
+              maxLength={3}
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <input
+              value={newProduct.starsAmount}
+              onChange={(event) =>
+                setNewProduct((draft) => ({
+                  ...draft,
+                  starsAmount: Number(event.target.value) || 0,
+                }))
+              }
+              type="number"
+              min="0"
+              placeholder="Stars"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <input
+              value={newProduct.stripePriceId}
+              onChange={(event) =>
+                setNewProduct((draft) => ({ ...draft, stripePriceId: event.target.value }))
+              }
+              placeholder="price_... opcional"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <input
+              value={newProduct.externalUrl}
+              onChange={(event) =>
+                setNewProduct((draft) => ({ ...draft, externalUrl: event.target.value }))
+              }
+              placeholder="https:// proveedor externo"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <label className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2.5 text-xs font-semibold">
+              <input
+                checked={newProduct.featured}
+                onChange={(event) =>
+                  setNewProduct((draft) => ({ ...draft, featured: event.target.checked }))
+                }
+                type="checkbox"
+              />
+              Popular
+            </label>
+            <label className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2.5 text-xs font-semibold">
+              <input
+                checked={newProduct.active}
+                onChange={(event) =>
+                  setNewProduct((draft) => ({ ...draft, active: event.target.checked }))
+                }
+                type="checkbox"
+              />
+              Activo
+            </label>
+          </div>
+        </div>
+        {data?.premiumProducts.length ? (
+          data.premiumProducts.map((product) => (
+            <PremiumProductEditor
+              key={product.id}
+              product={product}
+              saving={savingProductId === product.id}
+              onChange={(nextProduct) => {
+                setData((current) =>
+                  current
+                    ? {
+                        ...current,
+                        premiumProducts: current.premiumProducts.map((item) =>
+                          item.id === nextProduct.id ? nextProduct : item,
+                        ),
+                      }
+                    : current,
+                );
+              }}
+              onSave={() => void savePremiumProduct(product)}
+            />
+          ))
+        ) : (
+          <Empty text={loading ? "Cargando productos..." : "Sin productos premium."} />
+        )}
+      </AdminSection>
+
+      <AdminSection title="Contenido premium" icon={Gift}>
+        <div className="rounded-2xl px-3 py-3">
+          <div className="grid gap-2 md:grid-cols-[1fr_1fr_140px_120px_auto]">
+            <input
+              value={newContent.title}
+              onChange={(event) =>
+                setNewContent((draft) => ({ ...draft, title: event.target.value }))
+              }
+              placeholder="Titulo del contenido"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <select
+              value={newContent.productId}
+              onChange={(event) =>
+                setNewContent((draft) => ({ ...draft, productId: event.target.value }))
+              }
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Sin producto asociado</option>
+              {data?.premiumProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.title}
+                </option>
+              ))}
+            </select>
+            <select
+              value={newContent.contentType}
+              onChange={(event) =>
+                setNewContent((draft) => ({
+                  ...draft,
+                  contentType: event.target.value as PremiumContentType,
+                }))
+              }
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="post">Post</option>
+              <option value="video">Video</option>
+              <option value="image">Imagen</option>
+              <option value="file">Archivo</option>
+              <option value="link">Link</option>
+              <option value="ai_prompt">Prompt IA</option>
+            </select>
+            <select
+              value={newContent.accessLevel}
+              onChange={(event) =>
+                setNewContent((draft) => ({
+                  ...draft,
+                  accessLevel: event.target.value as PremiumAccessLevel,
+                }))
+              }
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="paid">Pagado</option>
+              <option value="vip">VIP</option>
+              <option value="stars">Stars</option>
+              <option value="free">Gratis</option>
+            </select>
+            <button
+              onClick={() => void savePremiumContent(newContent)}
+              disabled={savingContentId === "new"}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl gradient-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {savingContentId === "new" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              Agregar
+            </button>
+          </div>
+          <textarea
+            value={newContent.preview}
+            onChange={(event) =>
+              setNewContent((draft) => ({ ...draft, preview: event.target.value }))
+            }
+            placeholder="Resumen o preview del contenido"
+            className="mt-2 min-h-16 w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+          <input
+            value={newContent.contentUrl}
+            onChange={(event) =>
+              setNewContent((draft) => ({ ...draft, contentUrl: event.target.value }))
+            }
+            placeholder="URL del contenido o archivo"
+            className="mt-2 w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        {data?.premiumContent.length ? (
+          data.premiumContent.map((content) => (
+            <PremiumContentEditor
+              key={content.id}
+              content={content}
+              products={data.premiumProducts}
+              saving={savingContentId === content.id}
+              onChange={(nextContent) => {
+                setData((current) =>
+                  current
+                    ? {
+                        ...current,
+                        premiumContent: current.premiumContent.map((item) =>
+                          item.id === nextContent.id ? nextContent : item,
+                        ),
+                      }
+                    : current,
+                );
+              }}
+              onSave={() => void savePremiumContent(content)}
+            />
+          ))
+        ) : (
+          <Empty text={loading ? "Cargando contenido..." : "Sin contenido premium."} />
+        )}
+      </AdminSection>
+
+      <AdminSection title="Accesos premium de usuarios" icon={KeyRound}>
+        <div className="rounded-2xl px-3 py-3">
+          <div className="grid gap-2 md:grid-cols-[1fr_150px_1fr_120px_auto]">
+            <select
+              value={newEntitlement.productId}
+              onChange={(event) =>
+                setNewEntitlement((draft) => ({ ...draft, productId: event.target.value }))
+              }
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="">Elige producto</option>
+              {data?.premiumProducts.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.title}
+                </option>
+              ))}
+            </select>
+            <input
+              value={newEntitlement.telegramUserId}
+              onChange={(event) =>
+                setNewEntitlement((draft) => ({
+                  ...draft,
+                  telegramUserId: event.target.value.replace(/\D/g, ""),
+                }))
+              }
+              inputMode="numeric"
+              placeholder="Telegram ID"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <input
+              value={newEntitlement.webUserId}
+              onChange={(event) =>
+                setNewEntitlement((draft) => ({ ...draft, webUserId: event.target.value }))
+              }
+              placeholder="Web User ID opcional"
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <select
+              value={newEntitlement.status}
+              onChange={(event) =>
+                setNewEntitlement((draft) => ({
+                  ...draft,
+                  status: event.target.value as typeof newEntitlement.status,
+                }))
+              }
+              className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            >
+              <option value="active">Activo</option>
+              <option value="pending">Pendiente</option>
+              <option value="expired">Expirado</option>
+              <option value="revoked">Revocado</option>
+            </select>
+            <button
+              onClick={() => void grantPremiumEntitlement()}
+              disabled={savingEntitlementId === "new"}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl gradient-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+            >
+              {savingEntitlementId === "new" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              Dar acceso
+            </button>
+          </div>
+        </div>
+        {data?.premiumEntitlements.length ? (
+          data.premiumEntitlements.map((entitlement) => {
+            const product = data.premiumProducts.find((item) => item.id === entitlement.productId);
+            return (
+              <Row key={entitlement.id}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {product?.title ?? "Producto eliminado"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {entitlement.telegramUserId
+                      ? `Telegram ${entitlement.telegramUserId}`
+                      : entitlement.webUserId}{" "}
+                    · {entitlement.source}
+                  </p>
+                </div>
+                <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                  {entitlement.status}
+                </span>
+              </Row>
+            );
+          })
+        ) : (
+          <Empty text={loading ? "Cargando accesos premium..." : "Sin accesos premium."} />
         )}
       </AdminSection>
 
@@ -953,6 +1494,218 @@ function PlanEditor({
   );
 }
 
+function PremiumProductEditor({
+  product,
+  saving,
+  onChange,
+  onSave,
+}: {
+  product: AdminPremiumProductRow;
+  saving: boolean;
+  onChange: (product: AdminPremiumProductRow) => void;
+  onSave: () => void;
+}) {
+  const update = (patch: Partial<AdminPremiumProductRow>) => onChange({ ...product, ...patch });
+
+  return (
+    <div className="rounded-2xl px-3 py-4">
+      <div className="grid gap-2 md:grid-cols-[1fr_1fr_150px_110px_auto]">
+        <input
+          value={product.title}
+          onChange={(event) => update({ title: event.target.value })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm font-semibold outline-none focus:border-primary"
+        />
+        <input
+          value={product.slug}
+          onChange={(event) => update({ slug: slugify(event.target.value) })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <select
+          value={product.kind}
+          onChange={(event) => update({ kind: event.target.value })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="premium_content">Contenido</option>
+          <option value="telegram_store">Telegram Store</option>
+          <option value="stars_pack">Stars</option>
+          <option value="crypto_external">Crypto externo</option>
+        </select>
+        <input
+          value={product.amount}
+          onChange={(event) => update({ amount: Number(event.target.value) || 0 })}
+          type="number"
+          min="1"
+          step="1"
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <button
+          onClick={onSave}
+          disabled={saving}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Guardar
+        </button>
+      </div>
+      <textarea
+        value={product.description}
+        onChange={(event) => update({ description: event.target.value })}
+        className="mt-2 min-h-16 w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+      />
+      <div className="mt-2 grid gap-2 md:grid-cols-[90px_120px_1fr_1fr_90px_100px_100px]">
+        <input
+          value={product.currency}
+          onChange={(event) =>
+            update({ currency: event.target.value.toUpperCase().replace(/[^A-Z]/g, "") })
+          }
+          maxLength={3}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          value={product.starsAmount}
+          onChange={(event) => update({ starsAmount: Number(event.target.value) || 0 })}
+          type="number"
+          min="0"
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          value={product.stripePriceId}
+          onChange={(event) => update({ stripePriceId: event.target.value })}
+          placeholder="price_..."
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          value={product.externalUrl}
+          onChange={(event) => update({ externalUrl: event.target.value })}
+          placeholder="https://"
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          value={product.sortOrder}
+          onChange={(event) => update({ sortOrder: Number(event.target.value) || 0 })}
+          type="number"
+          min="0"
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <label className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2.5 text-xs font-semibold">
+          <input
+            checked={product.featured}
+            onChange={(event) => update({ featured: event.target.checked })}
+            type="checkbox"
+          />
+          Popular
+        </label>
+        <label className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2.5 text-xs font-semibold">
+          <input
+            checked={product.active}
+            onChange={(event) => update({ active: event.target.checked })}
+            type="checkbox"
+          />
+          Activo
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PremiumContentEditor({
+  content,
+  products,
+  saving,
+  onChange,
+  onSave,
+}: {
+  content: AdminPremiumContentRow;
+  products: AdminPremiumProductRow[];
+  saving: boolean;
+  onChange: (content: AdminPremiumContentRow) => void;
+  onSave: () => void;
+}) {
+  const update = (patch: Partial<AdminPremiumContentRow>) => onChange({ ...content, ...patch });
+
+  return (
+    <div className="rounded-2xl px-3 py-4">
+      <div className="grid gap-2 md:grid-cols-[1fr_1fr_140px_120px_auto]">
+        <input
+          value={content.title}
+          onChange={(event) => update({ title: event.target.value })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm font-semibold outline-none focus:border-primary"
+        />
+        <select
+          value={content.productId}
+          onChange={(event) => update({ productId: event.target.value })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="">Sin producto</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.title}
+            </option>
+          ))}
+        </select>
+        <select
+          value={content.contentType}
+          onChange={(event) => update({ contentType: event.target.value })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="post">Post</option>
+          <option value="video">Video</option>
+          <option value="image">Imagen</option>
+          <option value="file">Archivo</option>
+          <option value="link">Link</option>
+          <option value="ai_prompt">Prompt IA</option>
+        </select>
+        <select
+          value={content.accessLevel}
+          onChange={(event) => update({ accessLevel: event.target.value })}
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="paid">Pagado</option>
+          <option value="vip">VIP</option>
+          <option value="stars">Stars</option>
+          <option value="free">Gratis</option>
+        </select>
+        <button
+          onClick={onSave}
+          disabled={saving}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Guardar
+        </button>
+      </div>
+      <textarea
+        value={content.preview}
+        onChange={(event) => update({ preview: event.target.value })}
+        className="mt-2 min-h-16 w-full rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+      />
+      <div className="mt-2 grid gap-2 md:grid-cols-[1fr_90px_100px]">
+        <input
+          value={content.contentUrl}
+          onChange={(event) => update({ contentUrl: event.target.value })}
+          placeholder="URL del contenido"
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <input
+          value={content.sortOrder}
+          onChange={(event) => update({ sortOrder: Number(event.target.value) || 0 })}
+          type="number"
+          min="0"
+          className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+        />
+        <label className="flex items-center gap-2 rounded-2xl bg-muted px-3 py-2.5 text-xs font-semibold">
+          <input
+            checked={content.active}
+            onChange={(event) => update({ active: event.target.checked })}
+            type="checkbox"
+          />
+          Activo
+        </label>
+      </div>
+    </div>
+  );
+}
+
 function AccessRow({
   access,
   saving,
@@ -1026,6 +1779,16 @@ function AccessRow({
       </button>
     </div>
   );
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 function Metric({
