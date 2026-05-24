@@ -167,7 +167,7 @@ function money(cents: number, currency: string) {
   };
 }
 
-function sellerView(seller: SellerRow, balanceCents = 0) {
+function sellerView(seller: SellerRow, balanceCents = 0, pendingWithdrawalCents = 0) {
   return {
     id: seller.id,
     displayName: seller.display_name,
@@ -179,6 +179,8 @@ function sellerView(seller: SellerRow, balanceCents = 0) {
     stripeStatus: seller.stripe_account_status,
     adminNote: seller.admin_note ?? "",
     balance: balanceCents / 100,
+    pendingWithdrawal: pendingWithdrawalCents / 100,
+    availableBalance: Math.max(0, balanceCents - pendingWithdrawalCents) / 100,
     createdAt: seller.created_at,
     updatedAt: seller.updated_at,
   };
@@ -272,6 +274,29 @@ async function sellerBalanceCents(sellerId: string, currency = "usd") {
   );
 }
 
+async function pendingWithdrawalCents(sellerId: string, currency = "usd") {
+  const { data, error } = await db()
+    .from("seller_withdrawal_requests")
+    .select("amount_cents,currency,status")
+    .eq("seller_id", sellerId)
+    .eq("currency", currency.toLowerCase())
+    .in("status", ["pending_review", "approved", "processing"]);
+
+  if (error) throw error;
+  return ((data ?? []) as Array<{ amount_cents: number }>).reduce(
+    (sum, withdrawal) => sum + withdrawal.amount_cents,
+    0,
+  );
+}
+
+async function sellerAvailableBalanceCents(sellerId: string, currency = "usd") {
+  const [balance, pending] = await Promise.all([
+    sellerBalanceCents(sellerId, currency),
+    pendingWithdrawalCents(sellerId, currency),
+  ]);
+  return Math.max(0, balance - pending);
+}
+
 async function ensureUniqueProductSlug(title: string) {
   const base = slugify(title) || "producto";
   for (let index = 0; index < 20; index += 1) {
@@ -314,7 +339,12 @@ export const getMarketplaceDashboard = createServerFn({ method: "GET" })
 
     if (publicError) throw publicError;
 
-    const balance = seller ? await sellerBalanceCents(seller.id, seller.currency) : 0;
+    const [balance, pendingWithdrawal] = seller
+      ? await Promise.all([
+          sellerBalanceCents(seller.id, seller.currency),
+          pendingWithdrawalCents(seller.id, seller.currency),
+        ])
+      : [0, 0];
 
     const { data: orders } = seller
       ? await db()
@@ -339,7 +369,7 @@ export const getMarketplaceDashboard = createServerFn({ method: "GET" })
       : { data: [] };
 
     return {
-      seller: seller ? sellerView(seller, balance) : null,
+      seller: seller ? sellerView(seller, balance, pendingWithdrawal) : null,
       products: ((products ?? []) as ProductRow[]).map((product) => productView(product)),
       publicProducts: (
         (publicProducts ?? []) as Array<
@@ -547,8 +577,16 @@ export const requestSellerWithdrawal = createServerFn({ method: "POST" })
     if (!seller) throw new Response("Primero crea tu perfil de vendedor.", { status: 400 });
     const amountCents = Math.round(data.amount * 100);
     const currency = data.currency.toLowerCase();
-    const balance = await sellerBalanceCents(seller.id, currency);
-    if (amountCents > balance) throw new Response("Saldo insuficiente.", { status: 400 });
+    const available = await sellerAvailableBalanceCents(seller.id, currency);
+    if (amountCents > available) {
+      throw new Response(
+        `Saldo insuficiente. Disponible para retiro: ${new Intl.NumberFormat("es-MX", {
+          style: "currency",
+          currency: currency.toUpperCase(),
+        }).format(available / 100)}.`,
+        { status: 400 },
+      );
+    }
 
     const { error } = await db()
       .from("seller_withdrawal_requests")
@@ -605,11 +643,18 @@ export const getAdminMarketplace = createServerFn({ method: "GET" })
     const sellerNames = new Map(sellerRows.map((seller) => [seller.id, seller.display_name]));
     const balances = new Map<string, number>();
     for (const seller of sellerRows) {
-      balances.set(seller.id, await sellerBalanceCents(seller.id, seller.currency));
+      const [balance, pending] = await Promise.all([
+        sellerBalanceCents(seller.id, seller.currency),
+        pendingWithdrawalCents(seller.id, seller.currency),
+      ]);
+      balances.set(seller.id, balance);
+      balances.set(`${seller.id}:pending`, pending);
     }
 
     return {
-      sellers: sellerRows.map((seller) => sellerView(seller, balances.get(seller.id) ?? 0)),
+      sellers: sellerRows.map((seller) =>
+        sellerView(seller, balances.get(seller.id) ?? 0, balances.get(`${seller.id}:pending`) ?? 0),
+      ),
       products: ((products ?? []) as ProductRow[]).map((product) =>
         productView(product, sellerNames.get(product.seller_id)),
       ),
@@ -667,8 +712,8 @@ export const reviewSellerWithdrawal = createServerFn({ method: "POST" })
       return { ok: true as const, status: data.decision };
     }
 
-    const balance = await sellerBalanceCents(withdrawal.seller_id, withdrawal.currency);
-    if (withdrawal.amount_cents > balance) {
+    const balance = await sellerAvailableBalanceCents(withdrawal.seller_id, withdrawal.currency);
+    if (withdrawal.amount_cents > balance + withdrawal.amount_cents) {
       throw new Response("Saldo insuficiente para aprobar el retiro.", { status: 400 });
     }
 

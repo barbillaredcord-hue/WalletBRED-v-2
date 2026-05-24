@@ -12,6 +12,7 @@ export type WalletSnapshot = {
   };
   balance: number;
   currency: string;
+  balances: Array<{ currency: string; amount: number }>;
   change24h: number;
   stats: {
     sent: number;
@@ -31,6 +32,7 @@ export function demoWalletSnapshot(): WalletSnapshot {
     user: { id: "demo", name: user.name, handle: user.handle, avatar: user.avatar },
     balance: user.balance,
     currency: user.currency,
+    balances: [{ currency: user.currency, amount: user.balance }],
     change24h: user.change24h,
     stats: { sent: 42, received: 68, movements: transactions.length },
     transactions,
@@ -86,6 +88,7 @@ function emptyWalletSnapshot(): WalletSnapshot {
     user: { id: "web", name: "WalletBRED Web", handle: "WEB", avatar: "WB" },
     balance: 0,
     currency: user.currency,
+    balances: [],
     change24h: 0,
     stats: { sent: 0, received: 0, movements: 0 },
     transactions: [],

@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_app/transfers")({
   component: TransfersPage,
 });
 
-const currencies = ["USD", "EUR", "GBP", "JPY", "BRL", "INR"];
+const currencies = ["USD", "MXN", "EUR", "GBP", "JPY", "BRL", "INR"];
 
 function TransfersPage() {
   const [from, setFrom] = useState("USD");
@@ -23,6 +23,9 @@ function TransfersPage() {
   const createMovement = useServerFn(createWalletMovement);
   const rate = 0.92;
   const out = (parseFloat(amount || "0") * rate).toFixed(2);
+  const available =
+    snapshot.balances.find((balance) => balance.currency === from)?.amount ??
+    (snapshot.currency === from ? snapshot.balance : 0);
   const sentTransfers = snapshot.transactions.filter(
     (tx) => tx.type === "out" && tx.category === "transfer",
   );
@@ -35,6 +38,10 @@ function TransfersPage() {
     }
     if (!recipient.trim()) {
       setStatus("Selecciona o escribe un destinatario.");
+      return;
+    }
+    if (parsedAmount > available) {
+      setStatus(`Saldo insuficiente. Disponible: ${fmt(available, from)}.`);
       return;
     }
     if (isDemoMode()) {
@@ -64,7 +71,7 @@ function TransfersPage() {
 
   return (
     <div>
-      <PageHeader title="Transfers" subtitle={`Disponible: ${fmt(snapshot.balance, "USD")}`} />
+      <PageHeader title="Transfers" subtitle={`Disponible: ${fmt(available, from)}`} />
 
       <div className="grid gap-6 md:grid-cols-[1.1fr_0.9fr]">
         <Card>

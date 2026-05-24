@@ -88,6 +88,13 @@ function BankingPage() {
     }
   }, []);
 
+  const selectedAccount = accounts.find((item) => item.id === selectedAccountId);
+  const selectedTransferCurrency = selectedAccount?.currency ?? draft.currency;
+  const selectedAvailable =
+    snapshot.balances.find((balance) => balance.currency === selectedTransferCurrency.toUpperCase())
+      ?.amount ??
+    (snapshot.currency === selectedTransferCurrency.toUpperCase() ? snapshot.balance : 0);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -133,6 +140,16 @@ function BankingPage() {
 
     if (!Number.isFinite(amount) || amount <= 0) {
       setMessage("Escribe un monto valido para transferir.");
+      return;
+    }
+
+    if (amount > selectedAvailable) {
+      setMessage(
+        `Saldo insuficiente para retirar. Disponible: ${fmt(
+          selectedAvailable,
+          selectedTransferCurrency,
+        )}.`,
+      );
       return;
     }
 
@@ -361,6 +378,9 @@ function BankingPage() {
                   draft.currency}
               </span>
             </div>
+            <p className="rounded-2xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+              Disponible para esta moneda: {fmt(selectedAvailable, selectedTransferCurrency)}
+            </p>
           </div>
 
           <button

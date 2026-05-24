@@ -40,6 +40,8 @@ function contextUser(context: unknown) {
   return (context as WalletAuthContext).walletUser;
 }
 
+type WalletUser = ReturnType<typeof contextUser>;
+
 function movementDirection(type: string): "in" | "out" {
   if (
     type === "stripe_deposit" ||
@@ -98,30 +100,78 @@ function balanceFromMovements(movements: WalletMovement[]) {
   }, 0);
 }
 
+function balancesFromMovements(movements: WalletMovement[]) {
+  const balances = new Map<string, number>();
+  for (const movement of movements) {
+    if (!shouldCount(movement)) continue;
+    const currency = (movement.currency ?? "usd").toLowerCase();
+    const amount = movement.amount ?? 0;
+    const signed = movementDirection(movement.type) === "in" ? amount : -amount;
+    balances.set(currency, (balances.get(currency) ?? 0) + signed);
+  }
+
+  return [...balances.entries()]
+    .map(([currency, cents]) => ({
+      currency: currency.toUpperCase(),
+      amount: cents / 100,
+      cents,
+    }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+async function readWalletMovementsForUser(walletUser: WalletUser) {
+  let query = supabaseAdmin
+    .from("wallet_movements")
+    .select(
+      "id,telegram_user_id,web_user_id,type,title,recipient_handle,amount,currency,status,created_at",
+    )
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  query =
+    walletUser.source === "telegram"
+      ? query.eq("telegram_user_id", walletUser.telegramUserId)
+      : query.eq("web_user_id", walletUser.webUserId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as WalletMovement[];
+}
+
+export async function getWalletBalanceCentsForUser(walletUser: WalletUser, currency: string) {
+  const balances = balancesFromMovements(await readWalletMovementsForUser(walletUser));
+  return balances.find((balance) => balance.currency === currency.toUpperCase())?.cents ?? 0;
+}
+
+function assertSpendableBalance(params: {
+  currency: string;
+  amountCents: number;
+  balanceCents: number;
+}) {
+  if (params.amountCents > params.balanceCents) {
+    throw new Response(
+      `Saldo insuficiente. Disponible: ${fmtCents(params.balanceCents, params.currency)}.`,
+      { status: 400 },
+    );
+  }
+}
+
+function fmtCents(cents: number, currency: string) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format(cents / 100);
+}
+
 export const getWalletSnapshot = createServerFn({ method: "GET" })
   .middleware([requireWalletUser])
   .handler(async ({ context }) => {
     const walletUser = contextUser(context);
-
-    let query = supabaseAdmin
-      .from("wallet_movements")
-      .select(
-        "id,telegram_user_id,web_user_id,type,title,recipient_handle,amount,currency,status,created_at",
-      )
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    query =
-      walletUser.source === "telegram"
-        ? query.eq("telegram_user_id", walletUser.telegramUserId)
-        : query.eq("web_user_id", walletUser.webUserId);
-
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    const movements = (data ?? []) as WalletMovement[];
-    const balanceCents = balanceFromMovements(movements);
+    const movements = await readWalletMovementsForUser(walletUser);
+    const balances = balancesFromMovements(movements);
+    const primaryBalance =
+      balances.find((balance) => balance.currency === "USD") ?? balances[0] ?? null;
+    const balanceCents = primaryBalance?.cents ?? balanceFromMovements(movements.slice(0, 100));
     const sentCount = movements.filter(
       (movement) => movementDirection(movement.type) === "out",
     ).length;
@@ -137,7 +187,8 @@ export const getWalletSnapshot = createServerFn({ method: "GET" })
         avatar: walletUser.avatar,
       },
       balance: balanceCents / 100,
-      currency: "USD",
+      currency: primaryBalance?.currency ?? "USD",
+      balances: balances.map(({ currency, amount }) => ({ currency, amount })),
       change24h: 0,
       stats: {
         sent: sentCount,
@@ -154,6 +205,17 @@ export const createWalletMovement = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const walletUser = contextUser(context);
     const recipient = data.recipient?.replace(/^@+/, "").trim();
+    const amountCents = Math.round(data.amount * 100);
+    const currency = data.currency.toLowerCase();
+
+    if (["transfer", "withdraw", "convert", "qr_payment"].includes(data.kind)) {
+      const balanceCents = await getWalletBalanceCentsForUser(walletUser, currency);
+      assertSpendableBalance({
+        currency,
+        amountCents,
+        balanceCents,
+      });
+    }
 
     const movementByKind = {
       transfer: {
@@ -184,7 +246,7 @@ export const createWalletMovement = createServerFn({ method: "POST" })
       type: movementByKind.type,
       title: movementByKind.title,
       amount: Math.round(data.amount * 100),
-      currency: data.currency.toLowerCase(),
+      currency,
       recipient_handle: recipient ? `@${recipient}` : null,
       status: movementByKind.status,
     });

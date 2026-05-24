@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowDownToLine, ArrowUpFromLine, Loader2, RefreshCw, Search } from "lucide-react";
 import { TxRow, PageHeader, Card, fmt } from "@/components/ui-bits";
@@ -16,12 +16,29 @@ function WalletPage() {
   const [tab, setTab] = useState<(typeof tabs)[number]>("All");
   const [query, setQuery] = useState("");
   const [amount, setAmount] = useState("25");
+  const [currency, setCurrency] = useState("USD");
   const [status, setStatus] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const { snapshot, loading, error, refresh } = useWalletSnapshot();
   const startDeposit = useServerFn(startDepositCheckout);
   const createMovement = useServerFn(createWalletMovement);
   const transactions = snapshot.transactions;
+  const availableCurrencies = useMemo(
+    () =>
+      snapshot.balances.length
+        ? snapshot.balances.map((balance) => balance.currency)
+        : [snapshot.currency],
+    [snapshot.balances, snapshot.currency],
+  );
+  const selectedBalance =
+    snapshot.balances.find((balance) => balance.currency === currency)?.amount ??
+    (snapshot.currency === currency ? snapshot.balance : 0);
+
+  useEffect(() => {
+    if (!availableCurrencies.includes(currency)) {
+      setCurrency(availableCurrencies[0] ?? "USD");
+    }
+  }, [availableCurrencies, currency]);
 
   const filtered = transactions.filter((tx) => {
     if (tab === "Income" && tx.type !== "in") return false;
@@ -46,8 +63,13 @@ function WalletPage() {
     setStatus(null);
     try {
       if (action === "deposit") {
-        const response = await startDeposit({ data: { amount: parsedAmount, currency: "USD" } });
+        const response = await startDeposit({ data: { amount: parsedAmount, currency } });
         window.location.href = response.url;
+        return;
+      }
+
+      if (parsedAmount > selectedBalance) {
+        setStatus(`Saldo insuficiente. Disponible: ${fmt(selectedBalance, currency)}.`);
         return;
       }
 
@@ -55,7 +77,7 @@ function WalletPage() {
         data: {
           kind: action === "withdraw" ? "withdraw" : "convert",
           amount: parsedAmount,
-          currency: "USD",
+          currency,
           note: action === "convert" ? "EUR" : undefined,
         },
       });
@@ -76,11 +98,38 @@ function WalletPage() {
         <Card className="text-center">
           <p className="text-xs uppercase tracking-widest text-muted-foreground">Available</p>
           <h2 className="mt-1 font-display text-4xl font-bold">
-            {loading ? "..." : fmt(snapshot.balance, snapshot.currency)}
+            {loading ? "..." : fmt(selectedBalance, currency)}
           </h2>
+          {snapshot.balances.length > 1 && (
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {snapshot.balances.map((balance) => (
+                <button
+                  key={balance.currency}
+                  onClick={() => setCurrency(balance.currency)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    currency === balance.currency
+                      ? "gradient-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {fmt(balance.amount, balance.currency)}
+                </button>
+              ))}
+            </div>
+          )}
           {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
           <div className="mt-5 flex items-center gap-2 rounded-2xl bg-muted/50 px-3 py-2">
-            <span className="text-xs font-semibold text-muted-foreground">USD</span>
+            <select
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value)}
+              className="rounded-full bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground outline-none"
+            >
+              {availableCurrencies.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}

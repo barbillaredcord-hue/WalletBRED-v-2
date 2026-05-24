@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getStripe } from "@/lib/stripe.server";
 import { requireWalletUser, type WalletAuthContext } from "@/lib/telegram-auth.middleware";
+import { getWalletBalanceCentsForUser } from "@/lib/wallet.functions";
 
 const connectionSchema = z.object({
   country: z
@@ -141,7 +142,7 @@ export const createBankTransferRequest = createServerFn({ method: "POST" })
     const user = walletUser(context);
     const accountQuery = supabaseAdmin
       .from("bank_account_connections")
-      .select("id,provider_account_id,rail,currency,status")
+      .select("id,provider_account_id,account_label,rail,currency,status")
       .eq("id", data.accountId)
       .maybeSingle();
     const { data: account, error: accountError } = await accountOwnerFilter(accountQuery, context);
@@ -151,9 +152,38 @@ export const createBankTransferRequest = createServerFn({ method: "POST" })
 
     const amountCents = Math.round(data.amount * 100);
     const currency = data.currency.toLowerCase();
+    const availableCents = await getWalletBalanceCentsForUser(user, currency);
+    if (amountCents > availableCents) {
+      throw new Response(
+        `Saldo insuficiente. Disponible: ${new Intl.NumberFormat("es-MX", {
+          style: "currency",
+          currency: currency.toUpperCase(),
+        }).format(availableCents / 100)}.`,
+        { status: 400 },
+      );
+    }
+
+    const { data: movement, error: movementError } = await supabaseAdmin
+      .from("wallet_movements")
+      .insert({
+        telegram_user_id: user.telegramUserId,
+        web_user_id: user.webUserId,
+        type: "withdrawal_request",
+        title: `Bank withdrawal to ${account.account_label}`,
+        amount: amountCents,
+        currency,
+        recipient_handle: account.account_label,
+        status: "pending_provider",
+      })
+      .select("id")
+      .single();
+
+    if (movementError) throw movementError;
+
     const { data: transfer, error: insertError } = await supabaseAdmin
       .from("bank_transfer_requests")
       .insert({
+        wallet_movement_id: movement.id,
         bank_account_connection_id: data.accountId,
         telegram_user_id: user.telegramUserId,
         web_user_id: user.webUserId,
@@ -216,6 +246,16 @@ export const createBankTransferRequest = createServerFn({ method: "POST" })
 
       if (updateError) throw updateError;
 
+      const { error: movementUpdateError } = await supabaseAdmin
+        .from("wallet_movements")
+        .update({
+          status: outboundTransfer.status ?? "processing",
+          title: "Bank withdrawal sent",
+        })
+        .eq("id", movement.id);
+
+      if (movementUpdateError) throw movementUpdateError;
+
       return {
         ok: true as const,
         status: outboundTransfer.status ?? "processing",
@@ -232,6 +272,13 @@ export const createBankTransferRequest = createServerFn({ method: "POST" })
           review_note: message,
         })
         .eq("id", transfer.id);
+      await supabaseAdmin
+        .from("wallet_movements")
+        .update({
+          status: "failed",
+          title: "Bank withdrawal failed",
+        })
+        .eq("id", movement.id);
 
       throw new Response(message, { status: 400 });
     }

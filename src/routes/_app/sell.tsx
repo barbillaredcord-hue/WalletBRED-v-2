@@ -62,7 +62,7 @@ function SellPage() {
       products: data?.products.length ?? 0,
       approved: data?.products.filter((product) => product.status === "approved").length ?? 0,
       orders: data?.orders.filter((order) => order.status === "paid").length ?? 0,
-      balance: data?.seller?.balance ?? 0,
+      balance: data?.seller?.availableBalance ?? 0,
     }),
     [data],
   );
@@ -79,7 +79,7 @@ function SellPage() {
           country: next.seller.country,
           currency: next.seller.currency,
         });
-        setWithdrawAmount(next.seller.balance > 0 ? next.seller.balance : 0);
+        setWithdrawAmount(next.seller.availableBalance > 0 ? next.seller.availableBalance : 0);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo cargar marketplace.");
@@ -261,7 +261,9 @@ function SellPage() {
           <div className="mt-4 grid gap-3 rounded-2xl bg-muted/50 p-3 text-xs text-muted-foreground md:grid-cols-3">
             <span>Estado: {data.seller.status}</span>
             <span>Stripe: {data.seller.stripeStatus}</span>
-            <span>Cuenta: {data.seller.stripeAccountId || "sin conectar"}</span>
+            <span>
+              Pendiente retiro: {fmt(data.seller.pendingWithdrawal, data.seller.currency)}
+            </span>
           </div>
         )}
 
@@ -379,6 +381,11 @@ function SellPage() {
             step="1"
             className="rounded-2xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
           />
+          <p className="rounded-2xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground md:col-span-2">
+            Disponible para retirar:{" "}
+            {fmt(data?.seller?.availableBalance ?? 0, data?.seller?.currency ?? "USD")}. Saldo
+            total: {fmt(data?.seller?.balance ?? 0, data?.seller?.currency ?? "USD")}.
+          </p>
           <button
             onClick={() => void withdraw()}
             disabled={!data?.seller || busy === "withdraw" || withdrawAmount <= 0}

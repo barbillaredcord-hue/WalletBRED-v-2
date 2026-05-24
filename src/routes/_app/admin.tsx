@@ -611,9 +611,11 @@ function AdminPage() {
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-semibold">{fmt(seller.balance, seller.currency)}</p>
+                <p className="text-sm font-semibold">
+                  {fmt(seller.availableBalance, seller.currency)}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  {seller.stripeAccountId || "sin Connect"}
+                  Pendiente {fmt(seller.pendingWithdrawal, seller.currency)}
                 </p>
               </div>
             </Row>
