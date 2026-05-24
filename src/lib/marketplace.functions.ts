@@ -352,6 +352,23 @@ async function ensureUniqueProductSlug(title: string) {
   return `${base}-${Date.now()}`;
 }
 
+async function sellerContactEmail(seller: SellerRow) {
+  if (seller.web_user_id) {
+    const { data, error } = await db()
+      .from("web_wallet_users")
+      .select("email")
+      .eq("id", seller.web_user_id)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.email) return data.email as string;
+  }
+
+  if (seller.telegram_user_id) return `${seller.telegram_user_id}@walletbred.local`;
+
+  throw new Response("Falta correo para crear la cuenta conectada.", { status: 400 });
+}
+
 export const getMarketplaceDashboard = createServerFn({ method: "GET" })
   .middleware([requireWalletUser])
   .handler(async ({ context }) => {
@@ -494,9 +511,7 @@ export const startSellerConnectOnboarding = createServerFn({ method: "POST" })
     let accountId = seller.stripe_account_id;
     if (!accountId) {
       const account = await stripe.v2.core.accounts.create({
-        contact_email: seller.web_user_id
-          ? undefined
-          : `${seller.telegram_user_id}@walletbred.local`,
+        contact_email: await sellerContactEmail(seller),
         display_name: seller.display_name,
         dashboard: "express",
         identity: { country: seller.country, entity_type: "individual" },
