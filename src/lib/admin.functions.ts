@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireAdminUser, type AdminAuthContext } from "@/lib/telegram-auth.middleware";
+import { deliverTelegramStarsPurchase } from "@/lib/telegram-stars.functions";
 
 type AdminMovement = {
   id: string;
@@ -93,6 +94,38 @@ type AdminPremiumEntitlement = {
   source: string;
   status: string;
   expires_at: string | null;
+  updated_at: string;
+};
+
+type AdminStarsPurchase = {
+  id: string;
+  product_id: string | null;
+  telegram_user_id: number;
+  telegram_username: string | null;
+  chat_id: number | null;
+  total_amount: number;
+  currency: string;
+  status: string;
+  delivery_status: string;
+  delivery_error: string | null;
+  delivered_at: string | null;
+  telegram_payment_charge_id: string | null;
+  created_at: string;
+};
+
+type AdminPremiumDelivery = {
+  id: string;
+  purchase_id: string;
+  product_id: string | null;
+  content_item_id: string | null;
+  delivery_key: string;
+  delivery_type: string;
+  status: string;
+  attempt_count: number;
+  last_error: string | null;
+  sent_message_id: number | null;
+  delivered_at: string | null;
+  resend_requested_by: string | null;
   updated_at: string;
 };
 
@@ -195,6 +228,10 @@ const entitlementSchema = z.object({
   source: z.string().trim().min(2).max(40).default("admin"),
   status: z.enum(["active", "expired", "revoked", "pending"]).default("active"),
   expiresAt: z.string().trim().max(40).optional(),
+});
+
+const resendDeliverySchema = z.object({
+  purchaseId: z.string().uuid(),
 });
 
 function adminId(context: unknown) {
@@ -301,6 +338,8 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
       { data: premiumProductRows },
       { data: premiumContentRows },
       { data: entitlementRows },
+      { data: starsPurchaseRows },
+      { data: deliveryRows },
     ] = await Promise.all([
       supabaseAdmin
         .from("wallet_movements")
@@ -343,6 +382,20 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
         .select("id,product_id,telegram_user_id,web_user_id,source,status,expires_at,updated_at")
         .order("created_at", { ascending: false })
         .limit(200),
+      supabaseAdmin
+        .from("telegram_stars_purchases")
+        .select(
+          "id,product_id,telegram_user_id,telegram_username,chat_id,total_amount,currency,status,delivery_status,delivery_error,delivered_at,telegram_payment_charge_id,created_at",
+        )
+        .order("created_at", { ascending: false })
+        .limit(200),
+      supabaseAdmin
+        .from("premium_delivery_events")
+        .select(
+          "id,purchase_id,product_id,content_item_id,delivery_key,delivery_type,status,attempt_count,last_error,sent_message_id,delivered_at,resend_requested_by,updated_at",
+        )
+        .order("updated_at", { ascending: false })
+        .limit(500),
     ]);
 
     if (movementError) throw movementError;
@@ -495,6 +548,36 @@ export const getAdminDashboard = createServerFn({ method: "GET" })
           updatedAt: entitlement.updated_at,
         }),
       ),
+      starsPurchases: ((starsPurchaseRows ?? []) as AdminStarsPurchase[]).map((purchase) => ({
+        id: purchase.id,
+        productId: purchase.product_id ?? "",
+        telegramUserId: purchase.telegram_user_id.toString(),
+        telegramUsername: purchase.telegram_username ?? "",
+        chatId: purchase.chat_id?.toString() ?? "",
+        totalAmount: purchase.total_amount,
+        currency: purchase.currency,
+        status: purchase.status,
+        deliveryStatus: purchase.delivery_status,
+        deliveryError: purchase.delivery_error ?? "",
+        deliveredAt: purchase.delivered_at ?? "",
+        telegramPaymentChargeId: purchase.telegram_payment_charge_id ?? "",
+        createdAt: purchase.created_at,
+      })),
+      premiumDeliveries: ((deliveryRows ?? []) as AdminPremiumDelivery[]).map((delivery) => ({
+        id: delivery.id,
+        purchaseId: delivery.purchase_id,
+        productId: delivery.product_id ?? "",
+        contentItemId: delivery.content_item_id ?? "",
+        deliveryKey: delivery.delivery_key,
+        deliveryType: delivery.delivery_type,
+        status: delivery.status,
+        attemptCount: delivery.attempt_count,
+        lastError: delivery.last_error ?? "",
+        sentMessageId: delivery.sent_message_id?.toString() ?? "",
+        deliveredAt: delivery.delivered_at ?? "",
+        resendRequestedBy: delivery.resend_requested_by ?? "",
+        updatedAt: delivery.updated_at,
+      })),
       files: await listStorageFiles(),
     };
   });
@@ -700,4 +783,16 @@ export const saveAdminPremiumEntitlement = createServerFn({ method: "POST" })
 
     if (error) throw error;
     return { ok: true as const };
+  });
+
+export const resendAdminPremiumDelivery = createServerFn({ method: "POST" })
+  .middleware([requireAdminUser])
+  .inputValidator((input: unknown) => resendDeliverySchema.parse(input))
+  .handler(async ({ context, data }) => {
+    const result = await deliverTelegramStarsPurchase({
+      purchaseId: data.purchaseId,
+      force: true,
+      requestedBy: adminId(context),
+    });
+    return { ok: true as const, ...result };
   });

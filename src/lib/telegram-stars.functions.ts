@@ -29,6 +29,14 @@ type PremiumContentRow = {
   sort_order: number;
 };
 
+type PremiumDeliveryEventRow = {
+  id: string;
+  purchase_id: string;
+  delivery_key: string;
+  status: string;
+  attempt_count: number;
+};
+
 type TelegramSuccessfulPayment = {
   currency: string;
   total_amount: number;
@@ -40,6 +48,10 @@ type TelegramSuccessfulPayment = {
 type TelegramUserLike = {
   id?: number;
   username?: string;
+};
+
+type TelegramMessageResult = {
+  message_id?: number;
 };
 
 const invoiceSchema = z.object({
@@ -233,11 +245,38 @@ export async function answerTelegramPreCheckoutQuery({
 }
 
 export async function sendTelegramMessage(chatId: number, text: string) {
-  await telegramApi<boolean>("sendMessage", {
+  return telegramApi<TelegramMessageResult>("sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
+  });
+}
+
+async function sendTelegramDocument(chatId: number, document: string, caption: string) {
+  return telegramApi<TelegramMessageResult>("sendDocument", {
+    chat_id: chatId,
+    document,
+    caption,
+    parse_mode: "HTML",
+  });
+}
+
+async function sendTelegramPhoto(chatId: number, photo: string, caption: string) {
+  return telegramApi<TelegramMessageResult>("sendPhoto", {
+    chat_id: chatId,
+    photo,
+    caption,
+    parse_mode: "HTML",
+  });
+}
+
+async function sendTelegramVideo(chatId: number, video: string, caption: string) {
+  return telegramApi<TelegramMessageResult>("sendVideo", {
+    chat_id: chatId,
+    video,
+    caption,
+    parse_mode: "HTML",
   });
 }
 
@@ -259,7 +298,7 @@ async function getPurchaseForPayload(payload: string) {
   const { data, error } = await supabaseAdmin
     .from("telegram_stars_purchases")
     .select(
-      "id,product_id,telegram_user_id,chat_id,invoice_payload,total_amount,currency,status,delivery_status,telegram_payment_charge_id",
+      "id,product_id,telegram_user_id,chat_id,invoice_payload,total_amount,currency,status,delivery_status,telegram_payment_charge_id,delivered_at",
     )
     .eq("id", purchaseId)
     .maybeSingle();
@@ -330,6 +369,268 @@ async function buildDeliveryMessage(product: PremiumProductRow, content: Premium
   return lines.join("\n");
 }
 
+function deliveryTypeForContent(content: PremiumContentRow | null) {
+  if (!content) return "message";
+  if (content.content_type === "file") return "file";
+  if (content.content_type === "image") return "image";
+  if (content.content_type === "video") return "video";
+  if (content.content_url) return "link";
+  return "message";
+}
+
+function contentSnapshot(product: PremiumProductRow, content: PremiumContentRow | null) {
+  return {
+    product: {
+      id: product.id,
+      slug: product.slug,
+      title: product.title,
+    },
+    content: content
+      ? {
+          id: content.id,
+          title: content.title,
+          contentType: content.content_type,
+          preview: content.preview,
+          contentUrl: content.content_url,
+          accessLevel: content.access_level,
+        }
+      : null,
+  };
+}
+
+async function ensureDeliveryEvent({
+  purchaseId,
+  product,
+  content,
+  telegramUserId,
+  chatId,
+  resendRequestedBy,
+}: {
+  purchaseId: string;
+  product: PremiumProductRow;
+  content: PremiumContentRow | null;
+  telegramUserId: number;
+  chatId: number;
+  resendRequestedBy?: string | null;
+}) {
+  const deliveryKey = content ? `content:${content.id}` : `product:${product.id}`;
+  const deliveryType = deliveryTypeForContent(content);
+  const { data: current, error: readError } = await supabaseAdmin
+    .from("premium_delivery_events")
+    .select("id,purchase_id,delivery_key,status,attempt_count")
+    .eq("purchase_id", purchaseId)
+    .eq("delivery_key", deliveryKey)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (current) {
+    if (resendRequestedBy) {
+      const { error: updateError } = await supabaseAdmin
+        .from("premium_delivery_events")
+        .update({ resend_requested_by: resendRequestedBy })
+        .eq("id", current.id);
+      if (updateError) throw updateError;
+    }
+    return current as PremiumDeliveryEventRow;
+  }
+
+  const payload = {
+    purchase_id: purchaseId,
+    product_id: product.id,
+    content_item_id: content?.id ?? null,
+    delivery_key: deliveryKey,
+    telegram_user_id: telegramUserId,
+    chat_id: chatId,
+    delivery_type: deliveryType,
+    status: "pending",
+    content_snapshot: contentSnapshot(product, content),
+    resend_requested_by: resendRequestedBy ?? null,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("premium_delivery_events")
+    .insert(payload)
+    .select("id,purchase_id,delivery_key,status,attempt_count")
+    .single();
+  if (error) throw error;
+  return data as PremiumDeliveryEventRow;
+}
+
+function buildContentCaption(product: PremiumProductRow, content: PremiumContentRow | null) {
+  if (!content) return buildDeliveryMessage(product, []);
+  const lines = [
+    `<b>${escapeHtml(content.title)}</b>`,
+    escapeHtml(content.preview || product.title),
+  ];
+  if (content.content_url && !["file", "image", "video"].includes(content.content_type)) {
+    lines.push("", escapeHtml(content.content_url));
+  }
+  return lines.join("\n");
+}
+
+async function sendPremiumContentDelivery({
+  chatId,
+  product,
+  content,
+}: {
+  chatId: number;
+  product: PremiumProductRow;
+  content: PremiumContentRow | null;
+}) {
+  const caption = await buildContentCaption(product, content);
+  if (!content) return sendTelegramMessage(chatId, caption);
+
+  if (content.content_type === "file" && content.content_url) {
+    return sendTelegramDocument(chatId, content.content_url, caption);
+  }
+  if (content.content_type === "image" && content.content_url) {
+    return sendTelegramPhoto(chatId, content.content_url, caption);
+  }
+  if (content.content_type === "video" && content.content_url) {
+    return sendTelegramVideo(chatId, content.content_url, caption);
+  }
+  return sendTelegramMessage(chatId, caption);
+}
+
+async function markDeliveryEvent({
+  event,
+  status,
+  messageId,
+  error,
+}: {
+  event: PremiumDeliveryEventRow;
+  status: "sent" | "failed" | "skipped";
+  messageId?: number | null;
+  error?: string | null;
+}) {
+  const { error: updateError } = await supabaseAdmin
+    .from("premium_delivery_events")
+    .update({
+      status,
+      attempt_count: event.attempt_count + (status === "skipped" ? 0 : 1),
+      sent_message_id: messageId ?? null,
+      last_error: error ?? null,
+      delivered_at: status === "sent" ? new Date().toISOString() : null,
+    })
+    .eq("id", event.id);
+  if (updateError) throw updateError;
+}
+
+async function ensureTelegramStarsEntitlement({
+  purchaseId,
+  productId,
+  telegramUserId,
+}: {
+  purchaseId: string;
+  productId: string;
+  telegramUserId: number;
+}) {
+  const { error } = await supabaseAdmin.from("premium_user_entitlements").upsert(
+    {
+      product_id: productId,
+      telegram_user_id: telegramUserId,
+      source: "telegram_stars",
+      status: "active",
+      telegram_stars_purchase_id: purchaseId,
+    },
+    { onConflict: "telegram_stars_purchase_id" },
+  );
+  if (error) throw error;
+}
+
+export async function deliverTelegramStarsPurchase({
+  purchaseId,
+  force = false,
+  requestedBy = null,
+}: {
+  purchaseId: string;
+  force?: boolean;
+  requestedBy?: string | null;
+}) {
+  const { data: purchase, error: purchaseError } = await supabaseAdmin
+    .from("telegram_stars_purchases")
+    .select(
+      "id,product_id,telegram_user_id,chat_id,total_amount,currency,status,delivery_status,telegram_payment_charge_id",
+    )
+    .eq("id", purchaseId)
+    .maybeSingle();
+  if (purchaseError) throw purchaseError;
+  if (!purchase) throw new Error("Compra no encontrada.");
+  if (!purchase.telegram_payment_charge_id || !["paid", "fulfilled"].includes(purchase.status)) {
+    throw new Error("La compra todavia no tiene pago confirmado.");
+  }
+  if (purchase.delivery_status === "sent" && !force) {
+    return { delivered: 0, skipped: 1, failed: 0 };
+  }
+
+  const { data: product, error: productError } = await supabaseAdmin
+    .from("premium_products")
+    .select(
+      "id,slug,title,description,kind,price_amount_cents,price_currency,stars_amount,active,featured,sort_order",
+    )
+    .eq("id", purchase.product_id)
+    .maybeSingle();
+  if (productError) throw productError;
+  if (!product) throw new Error("Producto premium no encontrado.");
+
+  const telegramUserId = Number(purchase.telegram_user_id);
+  const chatId = Number(purchase.chat_id ?? purchase.telegram_user_id);
+  await ensureTelegramStarsEntitlement({
+    purchaseId: purchase.id,
+    productId: product.id,
+    telegramUserId,
+  });
+
+  const content = await readPremiumContent([product.id]);
+  const deliveryItems = content.length ? content : [null];
+  let delivered = 0;
+  let skipped = 0;
+  let failed = 0;
+  let lastError: string | null = null;
+
+  for (const item of deliveryItems) {
+    const event = await ensureDeliveryEvent({
+      purchaseId: purchase.id,
+      product: product as PremiumProductRow,
+      content: item,
+      telegramUserId,
+      chatId,
+      resendRequestedBy: requestedBy,
+    });
+    if (event.status === "sent" && !force) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const sent = await sendPremiumContentDelivery({
+        chatId,
+        product: product as PremiumProductRow,
+        content: item,
+      });
+      await markDeliveryEvent({ event, status: "sent", messageId: sent.message_id ?? null });
+      delivered += 1;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "No se pudo entregar contenido.";
+      await markDeliveryEvent({ event, status: "failed", error: lastError.slice(0, 500) });
+      failed += 1;
+    }
+  }
+
+  const nextDeliveryStatus = failed > 0 ? "failed" : "sent";
+  const { error: updateError } = await supabaseAdmin
+    .from("telegram_stars_purchases")
+    .update({
+      status: nextDeliveryStatus === "sent" ? "fulfilled" : "paid",
+      delivery_status: nextDeliveryStatus,
+      delivered_at: nextDeliveryStatus === "sent" ? new Date().toISOString() : null,
+      delivery_error: lastError,
+    })
+    .eq("id", purchase.id);
+  if (updateError) throw updateError;
+
+  return { delivered, skipped, failed };
+}
+
 function escapeHtml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -356,6 +657,10 @@ export async function fulfillTelegramStarsPayment({
 
   if (payment.currency !== "XTR" || payment.total_amount !== purchase.total_amount) {
     await markPurchaseFailed(purchase.id, "El pago confirmado no coincide con la orden.");
+    return;
+  }
+  if (from?.id && Number(from.id) !== Number(purchase.telegram_user_id)) {
+    await markPurchaseFailed(purchase.id, "El usuario del pago no coincide con la orden.");
     return;
   }
 
@@ -389,28 +694,14 @@ export async function fulfillTelegramStarsPayment({
     .eq("id", purchase.id);
   if (updateError) throw updateError;
 
-  await supabaseAdmin.from("premium_user_entitlements").insert({
-    product_id: product.id,
-    telegram_user_id: telegramUserId,
-    source: "telegram_stars",
-    status: "active",
+  await ensureTelegramStarsEntitlement({
+    purchaseId: purchase.id,
+    productId: product.id,
+    telegramUserId,
   });
 
-  const content = await readPremiumContent([product.id]);
   try {
-    await sendTelegramMessage(
-      targetChatId,
-      await buildDeliveryMessage(product as PremiumProductRow, content),
-    );
-    await supabaseAdmin
-      .from("telegram_stars_purchases")
-      .update({
-        status: "fulfilled",
-        delivery_status: "sent",
-        delivered_at: new Date().toISOString(),
-        delivery_error: null,
-      })
-      .eq("id", purchase.id);
+    await deliverTelegramStarsPurchase({ purchaseId: purchase.id });
   } catch (error) {
     await supabaseAdmin
       .from("telegram_stars_purchases")

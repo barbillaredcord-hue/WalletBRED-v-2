@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Send,
   Settings,
   ShieldCheck,
   Users,
@@ -22,6 +23,7 @@ import { Card, fmt, PageHeader } from "@/components/ui-bits";
 import {
   cancelAdminTransfer,
   getAdminDashboard,
+  resendAdminPremiumDelivery,
   saveAdminAccessGrant,
   saveAdminPremiumContent,
   saveAdminPremiumEntitlement,
@@ -60,6 +62,7 @@ function AdminPage() {
   const saveProduct = useServerFn(saveAdminPremiumProduct);
   const saveContent = useServerFn(saveAdminPremiumContent);
   const saveEntitlement = useServerFn(saveAdminPremiumEntitlement);
+  const resendDelivery = useServerFn(resendAdminPremiumDelivery);
   const updateMovement = useServerFn(updateAdminMovement);
   const loadDashboardRef = useRef(loadDashboard);
   const cancelTransferRef = useRef(cancelTransfer);
@@ -68,6 +71,7 @@ function AdminPage() {
   const saveProductRef = useRef(saveProduct);
   const saveContentRef = useRef(saveContent);
   const saveEntitlementRef = useRef(saveEntitlement);
+  const resendDeliveryRef = useRef(resendDelivery);
   const updateMovementRef = useRef(updateMovement);
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,6 +86,7 @@ function AdminPage() {
   const [savingProductId, setSavingProductId] = useState<string | null>(null);
   const [savingContentId, setSavingContentId] = useState<string | null>(null);
   const [savingEntitlementId, setSavingEntitlementId] = useState<string | null>(null);
+  const [resendingPurchaseId, setResendingPurchaseId] = useState<string | null>(null);
   const [savingMovementId, setSavingMovementId] = useState<string | null>(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>("all");
   const [editingMovement, setEditingMovement] = useState<AdminMovementRow | null>(null);
@@ -167,6 +172,8 @@ function AdminPage() {
       accesses: data?.accesses.length ?? 0,
       products: data?.premiumProducts.length ?? 0,
       content: data?.premiumContent.length ?? 0,
+      deliveries:
+        data?.starsPurchases.filter((purchase) => purchase.deliveryStatus === "sent").length ?? 0,
       files: data?.files.length ?? 0,
     }),
     [data],
@@ -193,6 +200,7 @@ function AdminPage() {
   saveProductRef.current = saveProduct;
   saveContentRef.current = saveContent;
   saveEntitlementRef.current = saveEntitlement;
+  resendDeliveryRef.current = resendDelivery;
   updateMovementRef.current = updateMovement;
 
   const refresh = useCallback(async () => {
@@ -393,6 +401,22 @@ function AdminPage() {
     }
   }
 
+  async function resendPremiumDelivery(purchaseId: string) {
+    setResendingPurchaseId(purchaseId);
+    setMessage(null);
+    try {
+      const result = await resendDeliveryRef.current({ data: { purchaseId } });
+      setMessage(
+        `Entrega reenviada. Enviados: ${result.delivered}, omitidos: ${result.skipped}, errores: ${result.failed}.`,
+      );
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo reenviar la entrega.");
+    } finally {
+      setResendingPurchaseId(null);
+    }
+  }
+
   async function saveMovementChanges(movement: AdminMovementRow) {
     setSavingMovementId(movement.id);
     setMessage(null);
@@ -495,7 +519,7 @@ function AdminPage() {
         <Metric icon={Users} label="Usuarios" value={stats.users} />
         <Metric icon={Ban} label="Transferencias" value={stats.transfers} />
         <Metric icon={Package} label="Productos" value={stats.products} />
-        <Metric icon={FileText} label="Contenido" value={stats.content} />
+        <Metric icon={Send} label="Entregadas" value={stats.deliveries} />
       </div>
 
       <AdminSection title="Usuarios reales" icon={Users}>
@@ -1073,6 +1097,29 @@ function AdminPage() {
           })
         ) : (
           <Empty text={loading ? "Cargando accesos premium..." : "Sin accesos premium."} />
+        )}
+      </AdminSection>
+
+      <AdminSection title="Entregas Telegram Stars" icon={Send}>
+        {data?.starsPurchases.length ? (
+          data.starsPurchases.map((purchase) => {
+            const product = data.premiumProducts.find((item) => item.id === purchase.productId);
+            const deliveries = data.premiumDeliveries.filter(
+              (delivery) => delivery.purchaseId === purchase.id,
+            );
+            return (
+              <StarsDeliveryRow
+                key={purchase.id}
+                purchase={purchase}
+                productTitle={product?.title ?? "Producto premium"}
+                deliveries={deliveries}
+                resending={resendingPurchaseId === purchase.id}
+                onResend={() => void resendPremiumDelivery(purchase.id)}
+              />
+            );
+          })
+        ) : (
+          <Empty text={loading ? "Cargando compras Stars..." : "Sin compras con Stars."} />
         )}
       </AdminSection>
 
@@ -1706,6 +1753,86 @@ function PremiumContentEditor({
   );
 }
 
+function StarsDeliveryRow({
+  purchase,
+  productTitle,
+  deliveries,
+  resending,
+  onResend,
+}: {
+  purchase: NonNullable<AdminData>["starsPurchases"][number];
+  productTitle: string;
+  deliveries: NonNullable<AdminData>["premiumDeliveries"];
+  resending: boolean;
+  onResend: () => void;
+}) {
+  const statusTone =
+    purchase.deliveryStatus === "sent"
+      ? "bg-success/15 text-success"
+      : purchase.deliveryStatus === "failed"
+        ? "bg-destructive/15 text-destructive"
+        : "bg-muted text-muted-foreground";
+
+  return (
+    <div className="rounded-2xl px-3 py-4 text-sm">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+          <Send className="h-4 w-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <p className="truncate font-semibold">{productTitle}</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone}`}>
+              {deliveryStatusLabel(purchase.deliveryStatus)}
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              {purchase.status}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            Telegram {purchase.telegramUserId}
+            {purchase.telegramUsername ? ` · @${purchase.telegramUsername}` : ""} ·{" "}
+            {purchase.totalAmount} {purchase.currency} ·{" "}
+            {new Date(purchase.createdAt).toLocaleString("es-MX")}
+          </p>
+          {purchase.deliveryError && (
+            <p className="mt-2 rounded-2xl bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {purchase.deliveryError}
+            </p>
+          )}
+          {deliveries.length > 0 && (
+            <div className="mt-3 grid gap-2">
+              {deliveries.map((delivery) => (
+                <div
+                  key={delivery.id}
+                  className="grid gap-2 rounded-2xl bg-muted/50 px-3 py-2 text-xs md:grid-cols-[1fr_90px_90px]"
+                >
+                  <span className="truncate">
+                    {delivery.deliveryType} · {delivery.deliveryKey}
+                  </span>
+                  <span>{deliveryStatusLabel(delivery.status)}</span>
+                  <span>{delivery.attemptCount} intentos</span>
+                  {delivery.lastError && (
+                    <span className="text-destructive md:col-span-3">{delivery.lastError}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onResend}
+          disabled={resending || !purchase.telegramPaymentChargeId}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-2.5 text-xs font-semibold disabled:opacity-50"
+        >
+          {resending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          Reenviar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AccessRow({
   access,
   saving,
@@ -1779,6 +1906,15 @@ function AccessRow({
       </button>
     </div>
   );
+}
+
+function deliveryStatusLabel(status: string) {
+  if (status === "sent") return "Entregado";
+  if (status === "failed") return "Error";
+  if (status === "pending") return "Pendiente";
+  if (status === "not_ready") return "Sin pago";
+  if (status === "skipped") return "Omitido";
+  return status;
 }
 
 function slugify(value: string) {

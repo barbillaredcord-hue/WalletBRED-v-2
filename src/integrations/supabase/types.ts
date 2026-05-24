@@ -88,6 +88,88 @@ export type Database = {
           },
         ];
       };
+      premium_delivery_events: {
+        Row: {
+          attempt_count: number;
+          chat_id: number;
+          content_item_id: string | null;
+          content_snapshot: Json | null;
+          created_at: string;
+          delivered_at: string | null;
+          delivery_key: string;
+          delivery_type: string;
+          id: string;
+          last_error: string | null;
+          product_id: string | null;
+          purchase_id: string;
+          resend_requested_by: string | null;
+          sent_message_id: number | null;
+          status: string;
+          telegram_user_id: number;
+          updated_at: string;
+        };
+        Insert: {
+          attempt_count?: number;
+          chat_id: number;
+          content_item_id?: string | null;
+          content_snapshot?: Json | null;
+          created_at?: string;
+          delivered_at?: string | null;
+          delivery_key: string;
+          delivery_type?: string;
+          id?: string;
+          last_error?: string | null;
+          product_id?: string | null;
+          purchase_id: string;
+          resend_requested_by?: string | null;
+          sent_message_id?: number | null;
+          status?: string;
+          telegram_user_id: number;
+          updated_at?: string;
+        };
+        Update: {
+          attempt_count?: number;
+          chat_id?: number;
+          content_item_id?: string | null;
+          content_snapshot?: Json | null;
+          created_at?: string;
+          delivered_at?: string | null;
+          delivery_key?: string;
+          delivery_type?: string;
+          id?: string;
+          last_error?: string | null;
+          product_id?: string | null;
+          purchase_id?: string;
+          resend_requested_by?: string | null;
+          sent_message_id?: number | null;
+          status?: string;
+          telegram_user_id?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "premium_delivery_events_content_item_id_fkey";
+            columns: ["content_item_id"];
+            isOneToOne: false;
+            referencedRelation: "premium_content_items";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "premium_delivery_events_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "premium_products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "premium_delivery_events_purchase_id_fkey";
+            columns: ["purchase_id"];
+            isOneToOne: false;
+            referencedRelation: "telegram_stars_purchases";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       premium_products: {
         Row: {
           active: boolean;
@@ -150,6 +232,7 @@ export type Database = {
           product_id: string | null;
           source: string;
           status: string;
+          telegram_stars_purchase_id: string | null;
           telegram_user_id: number | null;
           updated_at: string;
           web_user_id: string | null;
@@ -161,6 +244,7 @@ export type Database = {
           product_id?: string | null;
           source?: string;
           status?: string;
+          telegram_stars_purchase_id?: string | null;
           telegram_user_id?: number | null;
           updated_at?: string;
           web_user_id?: string | null;
@@ -172,6 +256,7 @@ export type Database = {
           product_id?: string | null;
           source?: string;
           status?: string;
+          telegram_stars_purchase_id?: string | null;
           telegram_user_id?: number | null;
           updated_at?: string;
           web_user_id?: string | null;
@@ -182,6 +267,13 @@ export type Database = {
             columns: ["product_id"];
             isOneToOne: false;
             referencedRelation: "premium_products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "premium_user_entitlements_telegram_stars_purchase_id_fkey";
+            columns: ["telegram_stars_purchase_id"];
+            isOneToOne: false;
+            referencedRelation: "telegram_stars_purchases";
             referencedColumns: ["id"];
           },
         ];
