@@ -53,6 +53,12 @@ const withdrawalSchema = z.object({
     .default("USD"),
 });
 
+const connectOnboardingSchema = z
+  .object({
+    returnPath: z.enum(["/sell", "/wallet", "/transfers", "/banking"]).default("/sell"),
+  })
+  .optional();
+
 const adminReviewProductSchema = z.object({
   productId: z.string().uuid(),
   decision: z.enum(["approved", "rejected", "disabled"]),
@@ -479,8 +485,10 @@ export const submitMarketplaceProduct = createServerFn({ method: "POST" })
 
 export const startSellerConnectOnboarding = createServerFn({ method: "POST" })
   .middleware([requireWalletUser])
-  .handler(async ({ context }) => {
+  .inputValidator((input: unknown) => connectOnboardingSchema.parse(input))
+  .handler(async ({ context, data }) => {
     const seller = await ensureSellerForWallet(context);
+    const returnPath = data?.returnPath ?? "/sell";
 
     const stripe = getStripe();
     let accountId = seller.stripe_account_id;
@@ -528,8 +536,8 @@ export const startSellerConnectOnboarding = createServerFn({ method: "POST" })
         type: "account_onboarding",
         account_onboarding: {
           configurations: ["recipient"],
-          refresh_url: `${appUrl}/sell?connect=refresh`,
-          return_url: `${appUrl}/sell?connect=return`,
+          refresh_url: `${appUrl}${returnPath}?connect=refresh`,
+          return_url: `${appUrl}${returnPath}?connect=return`,
           collection_options: {
             fields: "eventually_due",
             future_requirements: "include",

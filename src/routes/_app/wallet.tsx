@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowDownToLine, ArrowUpFromLine, Loader2, RefreshCw, Search } from "lucide-react";
+import { ConnectOnboardingCard } from "@/components/ConnectOnboardingCard";
 import { TxRow, PageHeader, Card, fmt } from "@/components/ui-bits";
 import { isDemoMode, useWalletSnapshot } from "@/hooks/use-wallet";
 import { createWalletMovement, startDepositCheckout } from "@/lib/wallet.functions";
@@ -161,7 +162,14 @@ function WalletPage() {
         </Card>
 
         <section>
-          <div className="flex items-center gap-2 rounded-2xl glass px-3 py-2">
+          <ConnectOnboardingCard
+            returnPath="/wallet"
+            compact
+            title="Retiro a cuenta propia"
+            description="Activa Stripe Connect para preparar retiros reales. Despues de completar KYC, el admin puede aprobar salidas."
+          />
+
+          <div className="mt-3 flex items-center gap-2 rounded-2xl glass px-3 py-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <input
               value={query}

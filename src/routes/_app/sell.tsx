@@ -37,14 +37,14 @@ function SellPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [sellerDraft, setSellerDraft] = useState({
     displayName: "",
-    country: "US",
-    currency: "USD",
+    country: "MX",
+    currency: "MXN",
   });
   const [productDraft, setProductDraft] = useState({
     title: "",
     description: "",
     amount: 25,
-    currency: "USD",
+    currency: "MXN",
     contentUrl: "",
     coverUrl: "",
   });
@@ -107,6 +107,7 @@ function SellPage() {
     setMessage(null);
     try {
       const result = await startConnectRef.current();
+      await refresh();
       window.location.href = result.url;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo abrir Stripe Connect.");

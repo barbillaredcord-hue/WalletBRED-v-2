@@ -18,6 +18,7 @@ import {
   listBankTransferRequests,
   requestBankAccountConnection,
 } from "@/lib/banking.functions";
+import { ConnectOnboardingCard } from "@/components/ConnectOnboardingCard";
 import { startDepositCheckout } from "@/lib/wallet.functions";
 
 export const Route = createFileRoute("/_app/banking")({
@@ -259,6 +260,12 @@ function BankingPage() {
             Abrir Checkout
           </button>
         </Card>
+
+        <ConnectOnboardingCard
+          returnPath="/banking"
+          title="Stripe Connect para retiros"
+          description="Crea o termina tu cuenta conectada para que WalletBRED pueda pagar retiros aprobados sin guardar datos bancarios completos."
+        />
 
         <Card>
           <div className="flex items-start gap-3">

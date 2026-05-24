@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { ArrowRight, Loader2 } from "lucide-react";
+import { ConnectOnboardingCard } from "@/components/ConnectOnboardingCard";
 import { PageHeader, Card, fmt } from "@/components/ui-bits";
 import { isDemoMode, useWalletSnapshot } from "@/hooks/use-wallet";
 import { createWalletMovement } from "@/lib/wallet.functions";
@@ -139,7 +140,16 @@ function TransfersPage() {
         </Card>
 
         <section>
-          <h2 className="mb-3 font-display text-base font-semibold">Ultimos destinos reales</h2>
+          <ConnectOnboardingCard
+            returnPath="/transfers"
+            compact
+            title="Configurar retiros"
+            description="Crea tu cuenta Stripe Connect desde aqui si quieres retirar saldo o ganancias despues de revision."
+          />
+
+          <h2 className="mb-3 mt-4 font-display text-base font-semibold">
+            Ultimos destinos reales
+          </h2>
           <div className="rounded-3xl glass p-2 shadow-card">
             {sentTransfers.length === 0 ? (
               <p className="px-3 py-6 text-center text-sm text-muted-foreground">
