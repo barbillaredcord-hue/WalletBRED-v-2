@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createHash, timingSafeEqual } from "crypto";
+import { handleTelegramAiMessage } from "@/lib/ai-chat.functions";
 import {
   fulfillTelegramStarsPayment,
   sendTelegramProductInvoice,
@@ -85,8 +86,32 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return Response.json({ ok: true });
         }
 
+        if (chatId && text.startsWith("/adminai") && from?.id) {
+          await handleTelegramAiMessage({
+            chatId,
+            from,
+            text,
+            adminMode: true,
+          });
+          return Response.json({ ok: true });
+        }
+
+        if (chatId && text.startsWith("/ai ") && from?.id) {
+          await handleTelegramAiMessage({
+            chatId,
+            from,
+            text: text.replace(/^\/ai\s+/i, ""),
+          });
+          return Response.json({ ok: true });
+        }
+
         if (chatId && /^\/(start|help)$/.test(text)) {
           await sendTelegramStore(chatId);
+          return Response.json({ ok: true });
+        }
+
+        if (chatId && text && !text.startsWith("/") && from?.id) {
+          await handleTelegramAiMessage({ chatId, from, text });
           return Response.json({ ok: true });
         }
 

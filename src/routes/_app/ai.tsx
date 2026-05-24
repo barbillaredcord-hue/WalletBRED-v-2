@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Bot, Loader2, SendHorizontal, Settings2, Sparkles } from "lucide-react";
+import { Bot, Loader2, SendHorizontal, Settings2, ShieldCheck, Sparkles, Star } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { Card, PageHeader } from "@/components/ui-bits";
 import { sendAiChatMessage } from "@/lib/ai-chat.functions";
+import { createTelegramStarsInvoice } from "@/lib/telegram-stars.functions";
 
 export const Route = createFileRoute("/_app/ai")({
   component: AiPage,
@@ -12,12 +13,25 @@ export const Route = createFileRoute("/_app/ai")({
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  action?: {
+    type: "buy_stars";
+    productId: string;
+    slug: string;
+    label: string;
+  } | null;
 };
 
 const starters = [
-  "Que me falta para publicar la Mini App en Telegram?",
-  "Como configuro el webhook de Telegram?",
-  "Ayudame a revisar variables para Stripe VIP",
+  "Que producto premium me recomiendas?",
+  "Como compro con Telegram Stars?",
+  "No recibi mi contenido, que hago?",
+];
+
+const adminStarters = [
+  "ventas",
+  "ayuda",
+  "precio telegram-stars-pack 500",
+  "desactivar crypto-external-access",
 ];
 
 function isDemoMode() {
@@ -30,18 +44,21 @@ function isDemoMode() {
 
 function AiPage() {
   const sendMessage = useServerFn(sendAiChatMessage);
+  const createStarsInvoice = useServerFn(createTelegramStarsInvoice);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [buyingProductId, setBuyingProductId] = useState<string | null>(null);
+  const [mode, setMode] = useState<"client" | "admin">("client");
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content:
-        "Listo. Puedo ayudarte a configurar Telegram, Supabase, Stripe, webhooks y el flujo VIP de esta wallet.",
+        "Soy la IA de WalletBRED. Puedo recomendar productos reales, explicar pagos con Stars y ayudarte con accesos o entregas.",
     },
   ]);
 
-  const quickActions = useMemo(() => starters, []);
+  const quickActions = useMemo(() => (mode === "admin" ? adminStarters : starters), [mode]);
 
   async function submitMessage(messageText: string) {
     const trimmed = messageText.trim();
@@ -57,15 +74,42 @@ function AiPage() {
       const response = await sendMessage({
         data: {
           messages: nextMessages.slice(-10),
+          mode,
           demo: isDemoMode(),
         },
       });
-      setMessages([...nextMessages, { role: "assistant", content: response.text }]);
+      setMessages([
+        ...nextMessages,
+        { role: "assistant", content: response.text, action: response.action },
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo contactar la IA.");
       setMessages(nextMessages);
     } finally {
       setPending(false);
+    }
+  }
+
+  async function buyWithStars(action: NonNullable<ChatMessage["action"]>) {
+    setBuyingProductId(action.productId);
+    setError(null);
+    try {
+      const { invoiceUrl } = await createStarsInvoice({ data: { productId: action.productId } });
+      const tg = (
+        window as {
+          Telegram?: {
+            WebApp?: {
+              openInvoice?: (url: string, cb?: (status: string) => void) => void;
+            };
+          };
+        }
+      ).Telegram?.WebApp;
+      if (tg?.openInvoice) tg.openInvoice(invoiceUrl);
+      else window.location.href = invoiceUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo abrir la compra con Stars.");
+    } finally {
+      setBuyingProductId(null);
     }
   }
 
@@ -76,7 +120,7 @@ function AiPage() {
 
   return (
     <div>
-      <PageHeader title="Chat IA" subtitle="Asistente para configurar la wallet" />
+      <PageHeader title="Chat IA" subtitle="Ventas, soporte y admin protegido" />
 
       <Card className="mb-4">
         <div className="flex items-start gap-3">
@@ -84,14 +128,34 @@ function AiPage() {
             <Settings2 className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold">Configurador inteligente</p>
+            <p className="text-sm font-semibold">Asistente WalletBRED</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              Usa IA desde el servidor para responder dudas de setup sin exponer la API key al
-              navegador.
+              Consulta el catalogo real antes de responder y no inventa productos ni precios.
             </p>
           </div>
         </div>
       </Card>
+
+      <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-muted p-1">
+        <button
+          onClick={() => setMode("client")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+            mode === "client" ? "bg-background shadow-card" : "text-muted-foreground"
+          }`}
+        >
+          <Bot className="h-4 w-4" />
+          Cliente
+        </button>
+        <button
+          onClick={() => setMode("admin")}
+          className={`flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${
+            mode === "admin" ? "bg-background shadow-card" : "text-muted-foreground"
+          }`}
+        >
+          <ShieldCheck className="h-4 w-4" />
+          Admin
+        </button>
+      </div>
 
       <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
         {quickActions.map((prompt) => (
@@ -124,6 +188,20 @@ function AiPage() {
                 }`}
               >
                 {message.content}
+                {assistant && message.action?.type === "buy_stars" && (
+                  <button
+                    onClick={() => void buyWithStars(message.action!)}
+                    disabled={buyingProductId === message.action.productId}
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-60"
+                  >
+                    {buyingProductId === message.action.productId ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Star className="h-4 w-4" />
+                    )}
+                    {message.action.label}
+                  </button>
+                )}
               </div>
             </div>
           );

@@ -86,7 +86,7 @@ function validateFromAuthHeader(): TelegramAuthContext {
 }
 
 function adminTelegramIds() {
-  return (process.env.ADMIN_TELEGRAM_USER_ID || "91147095")
+  return (process.env.ADMIN_IDS || process.env.ADMIN_TELEGRAM_USER_ID || "91147095")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
