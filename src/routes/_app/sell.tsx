@@ -195,7 +195,7 @@ function SellPage() {
       <Card className="mt-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold">Perfil de vendedor</p>
+            <p className="text-sm font-semibold">Perfil y retiros Connect</p>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               Tus productos se publican solo despues de revision admin. Completa Stripe Connect para
               poder retirar.
@@ -269,11 +269,11 @@ function SellPage() {
 
         <button
           onClick={() => void connectStripe()}
-          disabled={!data?.seller || busy === "connect"}
+          disabled={busy === "connect"}
           className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-3 text-sm font-semibold disabled:opacity-60"
         >
           {busy === "connect" && <Loader2 className="h-4 w-4 animate-spin" />}
-          Conectar Stripe para retiros
+          Crear/conectar cuenta Stripe para retiros
         </button>
       </Card>
 

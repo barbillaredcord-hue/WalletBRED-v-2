@@ -259,6 +259,40 @@ async function findSellerForWallet(context: unknown): Promise<SellerRow | null> 
   return (data as SellerRow | null) ?? null;
 }
 
+function defaultSellerCountry() {
+  return (process.env.MARKETPLACE_DEFAULT_COUNTRY || "MX").slice(0, 2).toUpperCase();
+}
+
+function defaultSellerCurrency() {
+  return (process.env.MARKETPLACE_DEFAULT_CURRENCY || "MXN").slice(0, 3).toLowerCase();
+}
+
+async function ensureSellerForWallet(context: unknown): Promise<SellerRow> {
+  const existing = await findSellerForWallet(context);
+  if (existing) return existing;
+
+  const user = walletUser(context);
+  const { data, error } = await db()
+    .from("marketplace_sellers")
+    .insert({
+      telegram_user_id: user.telegramUserId,
+      web_user_id: user.webUserId,
+      display_name: user.source === "telegram" ? user.name : user.handle,
+      handle: user.handle,
+      country: defaultSellerCountry(),
+      currency: defaultSellerCurrency(),
+      status: "pending_onboarding",
+      admin_note: "Perfil creado automaticamente al iniciar Stripe Connect.",
+    })
+    .select(
+      "id,telegram_user_id,web_user_id,display_name,handle,country,currency,status,stripe_account_id,stripe_account_status,admin_note,created_at,updated_at",
+    )
+    .single();
+
+  if (error) throw error;
+  return data as SellerRow;
+}
+
 async function sellerBalanceCents(sellerId: string, currency = "usd") {
   const { data, error } = await db()
     .from("seller_ledger_entries")
@@ -446,8 +480,7 @@ export const submitMarketplaceProduct = createServerFn({ method: "POST" })
 export const startSellerConnectOnboarding = createServerFn({ method: "POST" })
   .middleware([requireWalletUser])
   .handler(async ({ context }) => {
-    const seller = await findSellerForWallet(context);
-    if (!seller) throw new Response("Primero crea tu perfil de vendedor.", { status: 400 });
+    const seller = await ensureSellerForWallet(context);
 
     const stripe = getStripe();
     let accountId = seller.stripe_account_id;
