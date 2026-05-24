@@ -523,6 +523,11 @@ export const startSellerConnectOnboarding = createServerFn({ method: "POST" })
           },
         },
         configuration: {
+          merchant: {
+            capabilities: {
+              card_payments: { requested: true },
+            },
+          },
           recipient: {
             capabilities: {
               stripe_balance: {
@@ -550,7 +555,7 @@ export const startSellerConnectOnboarding = createServerFn({ method: "POST" })
       use_case: {
         type: "account_onboarding",
         account_onboarding: {
-          configurations: ["recipient"],
+          configurations: ["merchant", "recipient"],
           refresh_url: `${appUrl}${returnPath}?connect=refresh`,
           return_url: `${appUrl}${returnPath}?connect=return`,
           collection_options: {
