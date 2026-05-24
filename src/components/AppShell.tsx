@@ -9,6 +9,7 @@ import {
   Bot,
   BadgeDollarSign,
   Landmark,
+  Store,
 } from "lucide-react";
 
 const tabs = [
@@ -19,6 +20,7 @@ const tabs = [
   { to: "/banking", label: "Bank", icon: Landmark },
   { to: "/qr", label: "QR", icon: QrCode },
   { to: "/vip", label: "VIP", icon: Crown },
+  { to: "/sell", label: "Sell", icon: Store },
   { to: "/ai", label: "AI", icon: Bot },
   { to: "/profile", label: "Profile", icon: User },
 ] as const;
@@ -32,7 +34,7 @@ export function AppShell() {
       </main>
 
       <nav className="fixed bottom-3 left-1/2 z-50 w-[min(calc(100%-1.5rem),42rem)] -translate-x-1/2 rounded-2xl glass p-1.5 shadow-card">
-        <ul className="grid grid-cols-9">
+        <ul className="grid grid-cols-10">
           {tabs.map(({ to, label, icon: Icon }) => {
             const active = to === "/" ? pathname === "/" : pathname.startsWith(to);
             return (

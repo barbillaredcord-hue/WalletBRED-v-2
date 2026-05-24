@@ -15,6 +15,7 @@ import { Route as AppWalletRouteImport } from './routes/_app/wallet'
 import { Route as AppVipRouteImport } from './routes/_app/vip'
 import { Route as AppTransfersRouteImport } from './routes/_app/transfers'
 import { Route as AppSetupRouteImport } from './routes/_app/setup'
+import { Route as AppSellRouteImport } from './routes/_app/sell'
 import { Route as AppQrRouteImport } from './routes/_app/qr'
 import { Route as AppProfileRouteImport } from './routes/_app/profile'
 import { Route as AppMoneyRouteImport } from './routes/_app/money'
@@ -52,6 +53,11 @@ const AppTransfersRoute = AppTransfersRouteImport.update({
 const AppSetupRoute = AppSetupRouteImport.update({
   id: '/setup',
   path: '/setup',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSellRoute = AppSellRouteImport.update({
+  id: '/sell',
+  path: '/sell',
   getParentRoute: () => AppRoute,
 } as any)
 const AppQrRoute = AppQrRouteImport.update({
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/money': typeof AppMoneyRoute
   '/profile': typeof AppProfileRoute
   '/qr': typeof AppQrRoute
+  '/sell': typeof AppSellRoute
   '/setup': typeof AppSetupRoute
   '/transfers': typeof AppTransfersRoute
   '/vip': typeof AppVipRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/money': typeof AppMoneyRoute
   '/profile': typeof AppProfileRoute
   '/qr': typeof AppQrRoute
+  '/sell': typeof AppSellRoute
   '/setup': typeof AppSetupRoute
   '/transfers': typeof AppTransfersRoute
   '/vip': typeof AppVipRoute
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/_app/money': typeof AppMoneyRoute
   '/_app/profile': typeof AppProfileRoute
   '/_app/qr': typeof AppQrRoute
+  '/_app/sell': typeof AppSellRoute
   '/_app/setup': typeof AppSetupRoute
   '/_app/transfers': typeof AppTransfersRoute
   '/_app/vip': typeof AppVipRoute
@@ -161,6 +170,7 @@ export interface FileRouteTypes {
     | '/money'
     | '/profile'
     | '/qr'
+    | '/sell'
     | '/setup'
     | '/transfers'
     | '/vip'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/money'
     | '/profile'
     | '/qr'
+    | '/sell'
     | '/setup'
     | '/transfers'
     | '/vip'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/_app/money'
     | '/_app/profile'
     | '/_app/qr'
+    | '/_app/sell'
     | '/_app/setup'
     | '/_app/transfers'
     | '/_app/vip'
@@ -252,6 +264,13 @@ declare module '@tanstack/react-router' {
       path: '/setup'
       fullPath: '/setup'
       preLoaderRoute: typeof AppSetupRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sell': {
+      id: '/_app/sell'
+      path: '/sell'
+      fullPath: '/sell'
+      preLoaderRoute: typeof AppSellRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/qr': {
@@ -327,6 +346,7 @@ interface AppRouteChildren {
   AppMoneyRoute: typeof AppMoneyRoute
   AppProfileRoute: typeof AppProfileRoute
   AppQrRoute: typeof AppQrRoute
+  AppSellRoute: typeof AppSellRoute
   AppSetupRoute: typeof AppSetupRoute
   AppTransfersRoute: typeof AppTransfersRoute
   AppVipRoute: typeof AppVipRoute
@@ -341,6 +361,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMoneyRoute: AppMoneyRoute,
   AppProfileRoute: AppProfileRoute,
   AppQrRoute: AppQrRoute,
+  AppSellRoute: AppSellRoute,
   AppSetupRoute: AppSetupRoute,
   AppTransfersRoute: AppTransfersRoute,
   AppVipRoute: AppVipRoute,

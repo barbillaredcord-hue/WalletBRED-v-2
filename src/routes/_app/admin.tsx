@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Ban,
+  BadgeDollarSign as BadgeDollarSignIcon,
   Database,
   FileText,
   Gift,
@@ -15,6 +16,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Store as StoreIcon,
   Users,
   X,
 } from "lucide-react";
@@ -31,6 +33,11 @@ import {
   saveAdminVipPlan,
   updateAdminMovement,
 } from "@/lib/admin.functions";
+import {
+  getAdminMarketplace,
+  reviewMarketplaceProduct,
+  reviewSellerWithdrawal,
+} from "@/lib/marketplace.functions";
 
 export const Route = createFileRoute("/_app/admin")({
   component: AdminPage,
@@ -41,6 +48,7 @@ type AdminTransfer = NonNullable<AdminData>["transfers"][number];
 type AdminMovementRow = NonNullable<AdminData>["movements"][number];
 type AdminPremiumProductRow = NonNullable<AdminData>["premiumProducts"][number];
 type AdminPremiumContentRow = NonNullable<AdminData>["premiumContent"][number];
+type AdminMarketplaceData = Awaited<ReturnType<typeof getAdminMarketplace>>;
 type PremiumKind = "premium_content" | "telegram_store" | "stars_pack" | "crypto_external";
 type PremiumContentType = "post" | "video" | "image" | "file" | "link" | "ai_prompt";
 type PremiumAccessLevel = "free" | "paid" | "vip" | "stars";
@@ -64,6 +72,9 @@ function AdminPage() {
   const saveEntitlement = useServerFn(saveAdminPremiumEntitlement);
   const resendDelivery = useServerFn(resendAdminPremiumDelivery);
   const updateMovement = useServerFn(updateAdminMovement);
+  const loadMarketplace = useServerFn(getAdminMarketplace);
+  const reviewProduct = useServerFn(reviewMarketplaceProduct);
+  const reviewWithdrawalAction = useServerFn(reviewSellerWithdrawal);
   const loadDashboardRef = useRef(loadDashboard);
   const cancelTransferRef = useRef(cancelTransfer);
   const savePlanRef = useRef(savePlan);
@@ -73,7 +84,11 @@ function AdminPage() {
   const saveEntitlementRef = useRef(saveEntitlement);
   const resendDeliveryRef = useRef(resendDelivery);
   const updateMovementRef = useRef(updateMovement);
+  const loadMarketplaceRef = useRef(loadMarketplace);
+  const reviewProductRef = useRef(reviewProduct);
+  const reviewWithdrawalRef = useRef(reviewWithdrawalAction);
   const [data, setData] = useState<AdminData | null>(null);
+  const [marketplace, setMarketplace] = useState<AdminMarketplaceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
@@ -88,6 +103,7 @@ function AdminPage() {
   const [savingEntitlementId, setSavingEntitlementId] = useState<string | null>(null);
   const [resendingPurchaseId, setResendingPurchaseId] = useState<string | null>(null);
   const [savingMovementId, setSavingMovementId] = useState<string | null>(null);
+  const [reviewingMarketplaceId, setReviewingMarketplaceId] = useState<string | null>(null);
   const [selectedOwnerId, setSelectedOwnerId] = useState<string>("all");
   const [editingMovement, setEditingMovement] = useState<AdminMovementRow | null>(null);
   const [adminKey, setAdminKey] = useState("");
@@ -202,12 +218,20 @@ function AdminPage() {
   saveEntitlementRef.current = saveEntitlement;
   resendDeliveryRef.current = resendDelivery;
   updateMovementRef.current = updateMovement;
+  loadMarketplaceRef.current = loadMarketplace;
+  reviewProductRef.current = reviewProduct;
+  reviewWithdrawalRef.current = reviewWithdrawalAction;
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setMessage(null);
     try {
-      setData(await loadDashboardRef.current());
+      const [dashboard, marketplaceData] = await Promise.all([
+        loadDashboardRef.current(),
+        loadMarketplaceRef.current(),
+      ]);
+      setData(dashboard);
+      setMarketplace(marketplaceData);
       setNeedsWebKey(false);
     } catch (error) {
       const text =
@@ -442,6 +466,59 @@ function AdminPage() {
     }
   }
 
+  async function reviewSellerProduct(
+    productId: string,
+    decision: "approved" | "rejected" | "disabled",
+  ) {
+    setReviewingMarketplaceId(productId);
+    setMessage(null);
+    try {
+      await reviewProductRef.current({
+        data: {
+          productId,
+          decision,
+          note:
+            decision === "approved"
+              ? "Aprobado para vender en WalletBRED."
+              : "No aprobado por revision admin.",
+        },
+      });
+      setMessage("Producto marketplace revisado.");
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo revisar el producto.");
+    } finally {
+      setReviewingMarketplaceId(null);
+    }
+  }
+
+  async function reviewSellerWithdrawalRequest(
+    withdrawalId: string,
+    decision: "approved" | "rejected" | "canceled",
+  ) {
+    setReviewingMarketplaceId(withdrawalId);
+    setMessage(null);
+    try {
+      const result = await reviewWithdrawalRef.current({
+        data: {
+          withdrawalId,
+          decision,
+          note: decision === "approved" ? "Retiro aprobado por admin." : "Retiro no aprobado.",
+        },
+      });
+      setMessage(
+        result.status === "paid"
+          ? "Retiro pagado con Stripe Connect."
+          : "Retiro marketplace revisado.",
+      );
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo revisar el retiro.");
+    } finally {
+      setReviewingMarketplaceId(null);
+    }
+  }
+
   useEffect(() => {
     if (!hasTelegramSession()) {
       window.localStorage.removeItem(ADMIN_WEB_KEY_STORAGE);
@@ -521,6 +598,116 @@ function AdminPage() {
         <Metric icon={Package} label="Productos" value={stats.products} />
         <Metric icon={Send} label="Entregadas" value={stats.deliveries} />
       </div>
+
+      <AdminSection title="Marketplace vendedores" icon={Package}>
+        {marketplace?.sellers.length ? (
+          marketplace.sellers.map((seller) => (
+            <Row key={seller.id}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{seller.displayName}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {seller.handle || seller.id.slice(0, 8)} · {seller.status} · Stripe{" "}
+                  {seller.stripeStatus}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-semibold">{fmt(seller.balance, seller.currency)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {seller.stripeAccountId || "sin Connect"}
+                </p>
+              </div>
+            </Row>
+          ))
+        ) : (
+          <Empty text={loading ? "Cargando vendedores..." : "Sin vendedores marketplace."} />
+        )}
+      </AdminSection>
+
+      <AdminSection title="Revision de productos de usuarios" icon={StoreIcon}>
+        {marketplace?.products.length ? (
+          marketplace.products.map((product) => (
+            <Row key={product.id}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{product.title}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {product.sellerName} · {fmt(product.amount, product.currency)} · {product.status}
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                  {product.description}
+                </p>
+                {product.adminNote && (
+                  <p className="mt-1 text-xs text-muted-foreground">{product.adminNote}</p>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <button
+                  onClick={() => void reviewSellerProduct(product.id, "approved")}
+                  disabled={reviewingMarketplaceId === product.id}
+                  className="rounded-xl bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-700 disabled:opacity-60"
+                >
+                  Aprobar
+                </button>
+                <button
+                  onClick={() => void reviewSellerProduct(product.id, "rejected")}
+                  disabled={reviewingMarketplaceId === product.id}
+                  className="rounded-xl bg-destructive/15 px-3 py-1.5 text-xs font-semibold text-destructive disabled:opacity-60"
+                >
+                  Rechazar
+                </button>
+              </div>
+            </Row>
+          ))
+        ) : (
+          <Empty text={loading ? "Cargando productos marketplace..." : "Sin productos enviados."} />
+        )}
+      </AdminSection>
+
+      <AdminSection title="Retiros de vendedores" icon={BadgeDollarSignIcon}>
+        {marketplace?.withdrawals.length ? (
+          marketplace.withdrawals.map((withdrawal) => {
+            const seller = marketplace.sellers.find((item) => item.id === withdrawal.sellerId);
+            return (
+              <Row key={withdrawal.id}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {seller?.displayName ?? "Vendedor"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {fmt(withdrawal.amount, withdrawal.currency)} · {withdrawal.status}
+                  </p>
+                  {withdrawal.adminNote && (
+                    <p className="mt-1 text-xs text-muted-foreground">{withdrawal.adminNote}</p>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <button
+                    onClick={() => void reviewSellerWithdrawalRequest(withdrawal.id, "approved")}
+                    disabled={
+                      reviewingMarketplaceId === withdrawal.id ||
+                      withdrawal.status !== "pending_review"
+                    }
+                    className="rounded-xl bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-700 disabled:opacity-60"
+                  >
+                    Pagar
+                  </button>
+                  <button
+                    onClick={() => void reviewSellerWithdrawalRequest(withdrawal.id, "rejected")}
+                    disabled={
+                      reviewingMarketplaceId === withdrawal.id ||
+                      withdrawal.status !== "pending_review"
+                    }
+                    className="rounded-xl bg-destructive/15 px-3 py-1.5 text-xs font-semibold text-destructive disabled:opacity-60"
+                  >
+                    Rechazar
+                  </button>
+                </div>
+              </Row>
+            );
+          })
+        ) : (
+          <Empty text={loading ? "Cargando retiros..." : "Sin retiros de vendedores."} />
+        )}
+      </AdminSection>
 
       <AdminSection title="Usuarios reales" icon={Users}>
         {data?.users.length ? (

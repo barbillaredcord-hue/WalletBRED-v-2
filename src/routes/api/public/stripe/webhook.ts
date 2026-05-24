@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import Stripe from "stripe";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { recordMarketplaceCheckoutCompleted } from "@/lib/marketplace.functions";
 import { getStripe } from "@/lib/stripe.server";
 
 type CheckoutSessionWithPaymentIntent = Stripe.Checkout.Session & {
@@ -169,6 +170,7 @@ async function handleEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (await recordMarketplaceCheckoutCompleted(session)) break;
       const isWalletDeposit = session.metadata?.kind === "wallet_deposit";
       if (!isWalletDeposit) await upsertSubscriptionFromSession(session);
       await recordMovement({
